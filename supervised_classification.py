@@ -1,4 +1,5 @@
 import argparse
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -14,15 +15,33 @@ from load_model import load_model_from_save_dict
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, required=True)    # 读取训练好的模型
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        nargs="+",
+        required=True,
+        help="One checkpoint, or one checkpoint for each independent MFCVAE run.",
+    )
     parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--embedding_mode", choices=["sample", "mean"], default="sample")   #todo: 决定latent embedding是用均值还是采样。每个输入x不是直接得到确定的zj，有两种方法得到embedding
-    parser.add_argument("--max_iter", type=int, default=200)    # MLPClassifier 最大训练迭代次数
-    parser.add_argument("--classifier_seed", type=int, default=0)   # 控制 MLP 分类器的随机种子
+    parser.add_argument(
+        "--embedding_mode",
+        choices=["sample", "mean"],
+        default="sample",
+        help="Use posterior samples (the Table 1 protocol) or posterior means.",
+    )
+    parser.add_argument("--max_iter", type=int, default=200)
+    parser.add_argument("--classifier_seed", type=int, default=0)
+    parser.add_argument(
+        "--n_runs",
+        type=int,
+        default=3,
+        help="Number of independent classification evaluations; Table 1 uses 3.",
+    )
     return parser.parse_args()
 
 # 根据已经保存到模型里的 run_args.dataset决定使用哪个数据集
 def make_loaders(args, device):
+    """data preparation"""
     if args.dataset == "fast_mnist":
         train_data = Fast_MNIST("./data", train=True, download=True, device=device)
         test_data = Fast_MNIST("./data", train=False, download=True, device=device)
@@ -56,16 +75,20 @@ def make_loaders(args, device):
 
     # 创建DataLoader，把数据分成batch
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=args.eval_batch_size, shuffle=False, num_workers=0
+        train_data, batch_size=args.eval_batch_size, shuffle=False, num_workers=0   # shuffle=False不打乱数据顺序，要保证 embeddings 和 labels 顺序严格对应
     )
     test_loader = torch.utils.data.DataLoader(
         test_data, batch_size=args.eval_batch_size, shuffle=False, num_workers=0
     )
     return train_loader, test_loader
 
-# 把所有输入图片转换成 MFCVAE 的 latent representations。输入所有图片->mfcvae encoder->得到z1z2并保存
+
 @torch.no_grad()
 def collect_embeddings(model, loader, embedding_mode, run_args):
+    """
+    提取隐表示
+    把所有输入图片转换成 MFCVAE 的 latent representations。输入所有图片->mfcvae encoder->得到z1z2并保存
+    """
     model.eval()    # evaluation mode
     z_parts, y_parts = [[] for _ in range(model.J_n_mixtures)], []
 
@@ -100,8 +123,12 @@ def collect_embeddings(model, loader, embedding_mode, run_args):
         labels = labels[:, None]
     return z_list, z_all, labels.astype(int)
 
-# 训练监督分类器 - 真正使用 MLPClassifier多层感知机分类器
+
 def fit_and_score(x_train, y_train, x_test, y_test, max_iter, seed):
+    """
+    训练监督分类器并打分
+    真正使用 MLPClassifier多层感知机分类器
+    """
     clf = MLPClassifier(
         hidden_layer_sizes=(100,),
         activation="relu",
@@ -110,6 +137,14 @@ def fit_and_score(x_train, y_train, x_test, y_test, max_iter, seed):
     )
     clf.fit(x_train, y_train)   # 训练
     return clf.score(x_test, y_test)    # 测试 （accuracy = 正确预测数量/测试样本数量）
+
+
+def set_run_seed(seed):
+    """Make the posterior samples and sklearn classifier reproducible per run."""
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 # mfcvae的 progressive training渐进式训练
 def initialize_eval_progressive_state(model, run_args):
@@ -129,28 +164,8 @@ def initialize_eval_progressive_state(model, run_args):
     model.decoder.alpha_dec_fade_in_list = alpha_dec
 
 
-def main():
-    cli_args = parse_args()
-    model, run_args = load_model_from_save_dict(cli_args.model_path, map_location=cli_args.device)
-
-    model = model.to(cli_args.device)
-    model.eval()
-    initialize_eval_progressive_state(model, run_args)
-
-    print("Model device:", next(model.parameters()).device)
-    print("CUDA available:", torch.cuda.is_available())
-    print("CUDA device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "N/A")
-
-    train_loader, test_loader = make_loaders(run_args, cli_args.device)
-
-    print("dataset:", run_args.dataset)
-    if run_args.dataset == "fast_3dshapes":
-        print("labels:", run_args.factors_label_list)
-    else:
-        print("labels:", ["digit_class"])
-    print("z_j_dim_list:", run_args.z_j_dim_list)
-    print("embedding_mode:", cli_args.embedding_mode)
-
+def evaluate_run(model, run_args, cli_args, train_loader, test_loader, run_seed):
+    set_run_seed(run_seed)
     z_train_list, z_train_all, y_train = collect_embeddings(
         model, train_loader, cli_args.embedding_mode, run_args
     )
@@ -163,26 +178,63 @@ def main():
     x_train_by_name["z"] = z_train_all
     x_test_by_name["z"] = z_test_all
 
-    label_names = (
-        run_args.factors_label_list if run_args.dataset == "fast_3dshapes" else ["digit_class"]
-    )
-
-    print("\nSupervised classification test accuracy")
-    print("embedding," + ",".join(label_names))
+    scores = {}
     for emb_name in [f"z{j + 1}" for j in range(model.J_n_mixtures)] + ["z"]:
-        scores = []
         for label_idx in range(y_train.shape[1]):
-            score = fit_and_score(
+            scores[emb_name, label_idx] = fit_and_score(
                 x_train_by_name[emb_name],
                 y_train[:, label_idx],
                 x_test_by_name[emb_name],
                 y_test[:, label_idx],
                 cli_args.max_iter,
-                cli_args.classifier_seed,
+                run_seed,
             )
-            scores.append(score)
-        print(emb_name + "," + ",".join(f"{100.0 * score:.2f}" for score in scores))
+    return scores
+
+
+def main():
+    cli_args = parse_args()
+    if cli_args.n_runs < 2:
+        raise ValueError("--n_runs must be at least 2 to calculate a sample standard deviation.")
+    if len(cli_args.model_path) not in (1, cli_args.n_runs):
+        raise ValueError("Provide one checkpoint to evaluate repeatedly, or exactly --n_runs checkpoints.")
+
+    all_scores = defaultdict(list)
+    label_names = None
+    reference_dataset = None
+    for run_idx in range(cli_args.n_runs):
+        model_path = cli_args.model_path[run_idx] if len(cli_args.model_path) > 1 else cli_args.model_path[0]
+        model, run_args = load_model_from_save_dict(model_path, map_location=cli_args.device)
+        if reference_dataset is None:
+            reference_dataset = run_args.dataset
+            label_names = run_args.factors_label_list if run_args.dataset == "fast_3dshapes" else ["digit_class"]
+        elif run_args.dataset != reference_dataset:
+            raise ValueError("All checkpoints must use the same dataset.")
+
+        model = model.to(cli_args.device)
+        model.eval()
+        initialize_eval_progressive_state(model, run_args)
+        train_loader, test_loader = make_loaders(run_args, cli_args.device)
+
+        run_seed = cli_args.classifier_seed + run_idx
+        print(f"Run {run_idx + 1}/{cli_args.n_runs}: {model_path} (seed={run_seed})")
+        run_scores = evaluate_run(model, run_args, cli_args, train_loader, test_loader, run_seed)
+        for key, score in run_scores.items():
+            all_scores[key].append(score)
+
+    print("\nSupervised classification test accuracy (mean (sample std), %)")
+    print("embedding," + ",".join(label_names))
+    for emb_name in [f"z{j + 1}" for j in range(model.J_n_mixtures)] + ["z"]:
+        values = []
+        for label_idx in range(len(label_names)):
+            scores = np.asarray(all_scores[emb_name, label_idx])
+            values.append(f"{100.0 * scores.mean():.2f} ({100.0 * scores.std(ddof=1):.2f})")
+        print(emb_name + "," + ",".join(values))
 
 
 if __name__ == "__main__":
     main()
+
+# todo: 需要训练3个独立的模型，用3个改seed模型各跑一次。
+# todo: collect_embeddings()的采样过程
+# todo: 模型内部实现细节

@@ -1,4 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+#SBATCH --job-name=eval_mnist
+#SBATCH --output=res.txt
+#SBATCH --ntasks=1
+#SBATCH --time=150:00
+#SBATCH --gres=gpu:1
 
 cd ..
 python3 eval_top10_cluster_examples.py --model_path "pretrained_models/mnist.pt" --results_dir "results/mnist" --device "cuda:0"

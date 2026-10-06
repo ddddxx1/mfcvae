@@ -230,7 +230,9 @@ class MFCVAE(nn.Module):
         mu_q_z_j_x_list, log_sigma_square_q_z_j_x_list = self.encode(x)
 
         # case 2 in table of https://bochang.me/blog/posts/pytorch-distributions/ , shall yield e.g. 128 batch_shape, 10 event_shape.
-        q_z_j_x_list = [D.Independent(D.Normal(loc=mu_q_z_j_x_list[j], scale=torch.sqrt(torch.exp(log_sigma_square_q_z_j_x_list[j]))), 1) for j in range(self.J_n_mixtures)]  # do not permute in this case (contrary to the compute_loss_new(...) function)
+        # q_z_j_x_list = [D.Independent(D.Normal(loc=mu_q_z_j_x_list[j], scale=torch.sqrt(torch.exp(torch.clamp(log_sigma_square_q_z_j_x_list[j], min=-10, max=10)))), 1) for j in range(self.J_n_mixtures)]  # do not permute in this case (contrary to the compute_loss_new(...) function); clamp prevents NaN/inf in scale when log_sigma_square diverges during training
+        # fixme: 修复svhn训练时候的数据问题
+        q_z_j_x_list = [D.Independent(D.Normal(loc=mu_q_z_j_x_list[j], scale=torch.sqrt(torch.exp(torch.clamp(log_sigma_square_q_z_j_x_list[j], min=-10, max=10)))), 1) for j in range(self.J_n_mixtures)]  # do not permute in this case (contrary to the compute_loss_new(...) function); clamp prevents NaN/inf in scale when log_sigma_square diverges during training
         if self.training:
             z_sample_q_z_j_x_list = [q_z_j_x_list[j].rsample() for j in range(self.J_n_mixtures)]
         else:
@@ -425,7 +427,7 @@ class MFCVAE(nn.Module):
         """
         # term 1: compute log p(x|z), the MC estimate of E_{q(z,c|x)}[log p(x|z)] where z~q(z|x)
         if self.likelihood_model == 'Bernoulli':
-            p_x_z = D.Independent(D.Bernoulli(probs=torch.clamp(x_hat, min=1e-10, max=1-(1e-10))), 1)
+            p_x_z = D.Independent(D.Bernoulli(probs=torch.clamp(x_hat, min=1e-10, max=1-(1e-10)),validate_args=False),  1)  # 不要让新版pytorch强制检查Bernoulli的输入必须是0/1
         elif self.likelihood_model == 'Gaussian':
             p_x_z = D.Independent(D.Normal(loc=x_hat, scale=torch.ones_like(x_hat) * self.sigma_multiplier_p_x_z), 1)
         log_prob_p_x_z = p_x_z.log_prob(x)  # e.g. torch.Size([8])

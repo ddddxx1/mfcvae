@@ -1,6 +1,9 @@
 """
 Run this function to perform post-training compositionality plots of a model.
 For more information on the plots, see Section 4.2 and Appendix E.4 of the paper.
+
+运行此函数可对模型进行训练后成分分析图绘制。
+有关这些图的更多信息，请参阅论文第 4.2 节和附录 E.4。
 """
 
 import numpy as np

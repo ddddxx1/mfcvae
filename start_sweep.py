@@ -6,7 +6,7 @@ import wandb
 import train
 from utils import load_args_from_yaml
 
-seed_values = list(range(10))
+seed_values = [0, 1, 2]
 
 sweep_config = {
   "name": "Seed sweep",

@@ -1,5 +1,6 @@
 """
 - Initial source code was oriented on and inspired from the following script (and repository): https://github.com/eelxpeng/UnsupervisedDeepLearning-Pytorch/blob/master/udlp/clustering/vade.py
+它负责从零训练 MFCVAE 模型，并在训练过程中计算 loss、不同 facet 的聚类准确率、生成图像结果，最后保存模型。
 """
 
 

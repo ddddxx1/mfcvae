@@ -5,7 +5,7 @@ activation: relu  # added manually
 data_init: false  # added manually
 do_fc_batch_norm: false  # added manually
 seed: 3
-J_n_mixtures: 2
+J_n_mixtures: 2 # facet个数
 batch_size: 512
 config_args_path: ''
 cov_type_p_z_c: diag
@@ -27,7 +27,7 @@ decode_layer_dims:
 - 2000
 - 500
 - 500
-do_progressive_training: true
+do_progressive_training: true # 渐进式训练，线训练深层facet，再逐步引入浅层facet
 do_test_during_training: true
 do_vis_cluster_means: true
 do_vis_conf_mat: true
@@ -39,10 +39,10 @@ do_vis_recon: true
 do_vis_sample_generations_per_cluster: false
 do_vis_test: true
 do_vis_train: true
-enc_backbone_dims:
+enc_backbone_dims:  # backbone（主干网络）中每个stage的输出维度。fc先flatten成784然后经过encoder backbone ->500->2000
 - 500
 - 2000
-enc_backbone_n_hidden:
+enc_backbone_n_hidden:  # 每个stage的隐藏层数  backbone1 - 1 hidden layer, backbone2 - 1 hidden layer
 - 1
 - 1
 enc_rung_dims:
@@ -68,7 +68,7 @@ init_off_diag_cov_p_z_c: false
 init_type_p_z_c: gmm
 lr_decay: 1
 min_lr: null
-model_type: fc_vlae
+model_type: fc_vlae # 全连接的VLAE结构
 n_batches_fade_in: 15000
 n_clusters_j_list:
 - 25
@@ -87,6 +87,6 @@ sigma_multiplier_p_x_z: 0.35
 user: user1
 vis_every_n_epochs: 25
 wandb_mode: online
-z_j_dim_list:
+z_j_dim_list: # 每个facet的连续潜变量zj都是5纬 （输出包含5个数字的向量）
 - 5
 - 5
