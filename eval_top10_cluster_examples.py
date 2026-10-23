@@ -6,6 +6,7 @@ import os
 import argparse
 
 from datasets import Fast_MNIST, Fast_SVHN, Fast_3DShapes
+from datasets_enrc import Fast_CMNIST, Fast_Stickfigures
 from load_model import load_model_from_save_dict
 from plotting import plot_cluster_examples_torch_grid
 
@@ -58,6 +59,18 @@ def eval_top10_cluster_examples():
         # move data and labels back to cpu for these testing purposes, otherwise quickly out of memory
         test_data.data = test_data.data.to('cpu')
         test_data.labels = test_data.labels.to('cpu')
+    elif args.dataset == 'fast_cmnist':
+        target_size = getattr(args, 'cmnist_image_size', 32)
+        test_data = Fast_CMNIST(train=False, target_size=target_size,
+                                train_frac=getattr(args, 'cmnist_train_frac', 5/6),
+                                seed=args.seed, device=args.device)
+        test_data.data = test_data.data.to('cpu')
+        test_data.labels = test_data.labels.to('cpu')
+    elif args.dataset == 'fast_stickfigures':
+        test_data = Fast_Stickfigures(train=False, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
+                                      seed=args.seed, device=args.device)
+        test_data.data = test_data.data.to('cpu')
+        test_data.labels = test_data.labels.to('cpu')
     else:
         exit("Dataset not implemented.")
 
@@ -94,9 +107,13 @@ def plot_top10_cluster_examples(data, mfcvae, args, epoch, results_dir=None, sho
     if args.dataset == 'fast_mnist':
         in_channels = 1
         width, height = 28, 28
-    elif args.dataset in ['fast_svhn', 'fast_3dshapes']:
+    elif args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist']:
         in_channels = 3
-        width, height = 32, 32
+        target_size = getattr(args, 'cmnist_image_size', 32)
+        width, height = target_size, target_size
+    elif args.dataset == 'fast_stickfigures':
+        in_channels = 1
+        width, height = 20, 20
     else:
         exit("dataset not known")
 
@@ -116,8 +133,10 @@ def plot_top10_cluster_examples(data, mfcvae, args, epoch, results_dir=None, sho
 
     for batch_idx, (x, y_true) in enumerate(data_loader):
         x, y_true = x.to(device), y_true.to(device)
-        if args.dataset == 'fast_mnist':
+        if args.model_type in ['fc_shared', 'fc_per_facet_enc_shared_dec', 'fc_vlae']:
             x = x.view(x.size(0), -1).float()
+        elif args.model_type in ['conv_vlae']:
+            x = x.float()
         global_indices = list(range(batch_idx*args.eval_batch_size, (batch_idx+1)*args.eval_batch_size))
 
         x_hat, q_z_j_x_list, z_sample_q_z_j_x_list = mfcvae.forward(x, epoch, batch_idx)

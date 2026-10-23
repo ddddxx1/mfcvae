@@ -22,6 +22,7 @@ def train():
     from torch.autograd import Variable
     import numpy as np
     import os
+    import sys
     import matplotlib.pyplot as plt
     # import datetime
     import pickle
@@ -36,6 +37,7 @@ def train():
 
     from utils import cluster_acc_and_conf_mat, cluster_acc_weighted, str2bool, load_args_from_yaml
     from datasets import Fast_MNIST, Fast_SVHN, Fast_3DShapes
+    from datasets_enrc import Fast_CMNIST, Fast_Stickfigures
 
     from plotting import plot_confusion_matrix, plot_n_inputs_per_cluster, plot_pi, plot_dict, \
         plot_cluster_examples_torch_grid, plot_inputs_and_recons_torch_grid, \
@@ -65,7 +67,7 @@ def train():
                         help="model type to use, EITHER 'fc_shared' (fully-connected, one shared encoder) OR 'fc_per_facet_enc_shared_dec' (fully-connected, J non-shared encoders, one per facet, shared decoder) \
                               OR 'fc_vlae' (fully-connected, VLAE type encoder) OR VLAE as in progressive training paper ('conv_vlae')")
     parser.add_argument('--dataset', type=str, default='fast_mnist', metavar='N',
-                        help="dataset used during training, one in ['fast_mnist', 'fast_svhn', 'fast_3dshapes']")
+                        help="dataset used during training, one in ['fast_mnist', 'fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']")
 
     # model
     parser.add_argument('--J_n_mixtures', type=int, default=2, metavar='N', help='J - number of clusterings/facets/mixtures')
@@ -184,6 +186,12 @@ def train():
                         help='whether to perform data-aware init of model (True), or initialise the model randomly (False)')
 
     args, unknown = parser.parse_known_args()
+    # A YAML config supplies defaults, but an explicitly supplied command-line
+    # seed must take precedence (e.g. ``--seed 2``).
+    cli_seed = args.seed if any(
+        argument == '--seed' or argument.startswith('--seed=')
+        for argument in sys.argv[1:]
+    ) else None
     print("args not parsed in train: ", unknown)
 
    # load config dictionary instead
@@ -205,12 +213,13 @@ def train():
 
     # set the right user to login
     # The API key can be found under your account (top-right) when logged in -> settings -> API key
-    if args.user == 'user1':
-        wandb.login(key=wandb_args.login_key_1)
-    elif args.user == 'user2':
-        wandb.login(key=wandb_args.login_key_2)
-    else:
-        exit("user incorrect")
+    if args.wandb_mode != 'disabled':
+        if args.user == 'user1':
+            wandb.login(key=wandb_args.login_key_1)
+        elif args.user == 'user2':
+            wandb.login(key=wandb_args.login_key_2)
+        else:
+            exit("user incorrect")
 
     # not passing config, since sweep defined configs are defined for this run in config already
     # team_name is the name of the team shared with others in wandb
@@ -221,6 +230,11 @@ def train():
     # set args value to sweep values instead
     for (key, value) in wandb.config.items():
         setattr(args, key, value)  # args is namespace object
+
+    # Apply this after loading both YAML and any W&B sweep configuration so a
+    # user-requested seed cannot silently be replaced by the YAML value.
+    if cli_seed is not None:
+        args.seed = cli_seed
 
     # sweep configs updating args configs
     if 'z_dim' in wandb.config.keys():
@@ -288,9 +302,16 @@ def train():
     # update configs -> remember hyperparams
     wandb.config.update(args)
 
+    if args.wandb_mode == 'disabled':
+        save_dir = os.path.join(os.getcwd(), 'outputs', f'disabled_seed{args.seed}')
+    else:
+        save_dir = wandb.run.dir
+    os.makedirs(save_dir, exist_ok=True)
+
     print("args: ")
     print(args)
     print("wandb.run.dir: ", wandb.run.dir)
+    print("save_dir: ", save_dir)
 
     # asserts
     if args.do_progressive_training:
@@ -363,9 +384,39 @@ def train():
         # initialize data loaders
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
                                                    num_workers=0)  # must be 0 with GPU, good article: https://discuss.pytorch.org/t/cuda-initialization-error-when-dataloader-with-cuda-tensor/43390
+    elif args.dataset == 'fast_cmnist':
+        print("Initialize Colored MNIST (ENRC) dataset and data loaders...")
+        target_size = getattr(args, 'cmnist_image_size', 32)    # 带有默认值保护的数据读取 32*32分辨率
+        cmnist_train_frac = getattr(args, 'cmnist_train_frac', 5/6) # 训练集所占比例
+        cmnist_root = getattr(args, 'cmnist_root', 'data/enrc_data/cmnist') # 原始图像数据保存路径
+        # 控制找出训练集和测试集
+        train_data = Fast_CMNIST(root=cmnist_root, train=True,
+                                 target_size=target_size,
+                                 train_frac=cmnist_train_frac,
+                                 seed=args.seed, device=args.device)
+        test_data = Fast_CMNIST(root=cmnist_root, train=False,
+                                target_size=target_size,
+                                train_frac=cmnist_train_frac,
+                                seed=args.seed, device=args.device)
+        # 构建PyTorch批处理迭代器
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
+                                                   num_workers=0)
         test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.eval_batch_size, shuffle=True,
-                                                  num_workers=0)  # must be 0 with GPU, good article: https://discuss.pytorch.org/t/cuda-initialization-error-when-dataloader-with-cuda-tensor/43390
-
+                                                  num_workers=0)
+    elif args.dataset == 'fast_stickfigures':
+        print("Initialize Dancing Stickfigures (ENRC) dataset and data loaders...")
+        stickfigures_file = getattr(args, 'stickfigures_file', 'data/enrc_data/stickfigures/stickfigures_3sub.data')
+        stickfigures_train_frac = getattr(args, 'stickfigures_train_frac', 0.8)
+        train_data = Fast_Stickfigures(data_file=stickfigures_file,
+                                       train=True, train_frac=stickfigures_train_frac,
+                                       seed=args.seed, device=args.device)
+        test_data = Fast_Stickfigures(data_file=stickfigures_file,
+                                      train=False, train_frac=stickfigures_train_frac,
+                                      seed=args.seed, device=args.device)
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
+                                                   num_workers=0)
+        test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.eval_batch_size, shuffle=True,
+                                                  num_workers=0)
     else:
         raise ValueError("args.dataset has not chosen an implemented dataset")
 
@@ -401,6 +452,27 @@ def train():
         in_dim = 32 * 32 * in_channels
         likelihood_model = 'Gaussian'
         activation_x_hat_z = None
+    elif args.dataset == 'fast_cmnist':
+        target_size = getattr(args, 'cmnist_image_size', 32)
+        height, width = target_size, target_size
+        n_labels = 2
+        chosen_attr_list = ['left_digit', 'right_digit']
+        n_true_classes = [10, 10]
+        cmap = 'viridis'
+        in_channels = 3
+        in_dim = height * width * in_channels
+        likelihood_model = 'Gaussian'
+        activation_x_hat_z = 'sigmoid'
+    elif args.dataset == 'fast_stickfigures':
+        height, width = 20, 20
+        n_labels = 3
+        chosen_attr_list = ['posture_0', 'posture_1', 'posture_2']
+        n_true_classes = [3, 3, 3]
+        cmap = 'grey'
+        in_channels = 1
+        in_dim = height * width * in_channels
+        likelihood_model = 'Gaussian'
+        activation_x_hat_z = 'sigmoid'
 
     # other data-specific hyperparammers
     n_train_batches_per_epoch = len(train_loader)
@@ -657,7 +729,7 @@ def train():
             train_label_acc_mean = np.mean(train_acc_l_max_list).item()
 
             train_weighted_acc_j_max_list = []
-            if args.dataset in ['fast_svhn', 'fast_3dshapes']:
+            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']:
                 train_weighted_acc_j_l_list = [[] for j in range(mfcvae.J_n_mixtures)]
                 for j in range(mfcvae.J_n_mixtures):
                     for l in range(n_labels):
@@ -742,7 +814,7 @@ def train():
                 print_string += "Train Acc max facet %d: %.4f, " % (j, train_acc_j_max_list[j])
             for l in range(n_labels):
                 print_string += "Train Acc max label %d: %.4f, " % (l, train_acc_l_max_list[l])
-            if args.dataset in ['fast_svhn', 'fast_3dshapes']:
+            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']:
                 print_string += "|, "
                 for j in range(mfcvae.J_n_mixtures):
                     print_string += "Train Weighted Acc max facet %d: %.4f, " % (j, train_weighted_acc_j_max_list[j])
@@ -763,7 +835,7 @@ def train():
             log_dict['train_loss/kl_c'] = train_kl_c
             for j in range(mfcvae.J_n_mixtures):
                 log_dict['train_metric/facet_%d_acc_max' % j] = train_acc_j_max_list[j]
-                if args.dataset in ['fast_svhn', 'fast_3dshapes']:
+                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']:
                     log_dict['train_metric/facet_%d_weighted_acc_max' % j] = train_weighted_acc_j_max_list[j]
                 log_dict['train_metric/n_clusters_present_%d' % j] = len(y_pred_j_count_dict_list[j])
             log_dict['train_metric/facet_acc_max'] = train_facet_acc_max
@@ -775,7 +847,7 @@ def train():
                 log_dict['train_metric/label_acc_max'] = train_label_acc_max
                 log_dict['train_metric/label_acc_sum'] = train_label_acc_sum
                 log_dict['train_metric/label_acc_mean'] = train_label_acc_mean
-            if args.dataset in ['fast_svhn', 'fast_3dshapes']:
+            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']:
                 log_dict['train_metric/facet_weighted_acc_max'] = train_weighted_acc_max
                 log_dict['train_metric/facet_weighted_acc_sum'] = train_weighted_acc_sum
                 log_dict['train_metric/facet_weighted_acc_mean'] = train_weighted_acc_mean
@@ -921,7 +993,7 @@ def train():
                 eval_label_acc_mean = np.mean(eval_acc_l_max_list).item()
 
                 eval_weighted_acc_j_max_list = []
-                if args.dataset in ['fast_svhn', 'fast_3dshapes']:
+                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']:
                     eval_weighted_acc_j_l_list = [[] for j in range(mfcvae.J_n_mixtures)]
                     for j in range(mfcvae.J_n_mixtures):
                         for l in range(n_labels):
@@ -1018,7 +1090,7 @@ def train():
                     print_string += "Eval Acc max facet %d: %.4f, " % (j, eval_acc_j_max_list[j])
                 for l in range(n_labels):
                     print_string += "Eval Acc max label %d: %.4f, " % (l, eval_acc_l_max_list[l])
-                if args.dataset in ['fast_svhn', 'fast_3dshapes']:
+                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']:
                     print_string += "|, "
                     for j in range(mfcvae.J_n_mixtures):
                         print_string += "Eval Weighted Acc max facet %d: %.4f, " % (j, eval_weighted_acc_j_max_list[j])
@@ -1027,7 +1099,7 @@ def train():
                 log_dict = {'test_metric/loss': eval_loss}
                 for j in range(mfcvae.J_n_mixtures):
                     log_dict['test_metric/facet_%d_acc_max' % j] = eval_acc_j_max_list[j]
-                    if args.dataset in ['fast_svhn', 'fast_3dshapes']:
+                    if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']:
                         log_dict['test_metric/facet_%d_weighted_acc_max_' % j] = eval_weighted_acc_j_max_list[j]
                     log_dict['test_metric/clusters_present_%d' % j] = len(y_pred_j_count_dict_list[j])
                 log_dict['test_metric/facet_acc_max'] = eval_facet_acc_max
@@ -1039,7 +1111,7 @@ def train():
                     log_dict['test_metric/label_acc_max'] = eval_label_acc_max
                     log_dict['test_metric/label_acc_sum'] = eval_label_acc_sum
                     log_dict['test_metric/label_acc_mean'] = eval_label_acc_mean
-                if args.dataset in ['fast_svhn', 'fast_3dshapes']:
+                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_stickfigures']:
                     log_dict['test_metric/facet_weighted_acc_max'] = eval_weighted_acc_max
                     log_dict['test_metric/facet_weighted_acc_sum'] = eval_weighted_acc_sum
                     log_dict['test_metric/facet_weighted_acc_mean'] = eval_weighted_acc_mean
@@ -1047,13 +1119,13 @@ def train():
                 wandb.log(log_dict, step=epoch)
     # save model
     if args.save_model:
-        save_dict_path = os.path.join(wandb.run.dir, "save_dict.pt")
+        save_dict_path = os.path.join(save_dir, "save_dict.pt")
         save_dict = {'state_dict': mfcvae.state_dict(),
                      'args': args}  # args dictionary is already part of saving the model
         torch.save(save_dict, save_dict_path)
 
     # save args config dictionary
-    save_args_path = os.path.join(wandb.run.dir, "args.pickle")  # args_dict.py
+    save_args_path = os.path.join(save_dir, "args.pickle")  # args_dict.py
     with open(save_args_path, 'wb') as file:
         pickle.dump(args, file, protocol=pickle.HIGHEST_PROTOCOL)
 

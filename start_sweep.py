@@ -21,4 +21,4 @@ sweep_config = {
 wandb_args = load_args_from_yaml('configs/wandb.yml')
 sweep_id = wandb.sweep(sweep_config, project=wandb_args.project_name, entity=wandb_args.team_name)
 
-wandb.agent(sweep_id, function=train.train)
+wandb.agent(sweep_id, function=train.train, count=len(seed_values)) # wandb disable的时候无法判断结束，需要次数限制

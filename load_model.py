@@ -3,6 +3,7 @@ from mfcvae import MFCVAE
 import torch
 from torchvision.datasets import MNIST, SVHN
 from datasets import Fast_3DShapes
+from datasets_enrc import Fast_CMNIST, Fast_Stickfigures
 import torchvision
 from torchvision import transforms
 
@@ -49,7 +50,27 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
         likelihood_model = 'Gaussian'
         activation_x_hat_z = None  # 'sigmoid'  # 'sigmoid'  #  None  # 'sigmoid'
         n_labels = len(args.factors_label_list)
-
+    elif args.dataset == 'fast_cmnist':
+        target_size = getattr(args, 'cmnist_image_size', 32)
+        height, width = target_size, target_size
+        n_labels = 2
+        chosen_attr_list = ['left_digit', 'right_digit']
+        n_true_classes = [10, 10]
+        cmap = 'viridis'
+        in_channels = 3
+        in_dim = height * width * in_channels
+        likelihood_model = 'Gaussian'
+        activation_x_hat_z = 'sigmoid'
+    elif args.dataset == 'fast_stickfigures':
+        height, width = 20, 20
+        n_labels = 3
+        chosen_attr_list = ['posture_0', 'posture_1', 'posture_2']
+        n_true_classes = [3, 3, 3]
+        cmap = 'grey'
+        in_channels = 1
+        in_dim = 20 * 20 * in_channels
+        likelihood_model = 'Gaussian'
+        activation_x_hat_z = 'sigmoid'
 
     # other dataset-specific hyperparams
     if args.dataset == 'fast_mnist':
@@ -62,6 +83,16 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
         train_data = Fast_3DShapes(train=True, device=args.device, train_frac = args.threedshapes_train_frac,
                                                      factors_variation_dict=args.factors_variation_dict,
                                                      factors_label_list=args.factors_label_list)
+        n_train_batches_per_epoch = int(len(train_data) / args.batch_size)
+    elif args.dataset == 'fast_cmnist':
+        target_size = getattr(args, 'cmnist_image_size', 32)
+        train_data = Fast_CMNIST(train=True, target_size=target_size,
+                                 train_frac=getattr(args, 'cmnist_train_frac', 5/6),
+                                 seed=getattr(args, 'seed', 42), device='cpu')
+        n_train_batches_per_epoch = int(len(train_data) / args.batch_size)
+    elif args.dataset == 'fast_stickfigures':
+        train_data = Fast_Stickfigures(train=True, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
+                                       seed=getattr(args, 'seed', 42), device='cpu')
         n_train_batches_per_epoch = int(len(train_data) / args.batch_size)
     # print("n_train_batches_per_epoch: ", n_train_batches_per_epoch)
 

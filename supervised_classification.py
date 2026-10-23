@@ -9,6 +9,7 @@ from sklearn.neural_network import MLPClassifier
 from torchvision import transforms
 
 from datasets import Fast_3DShapes, Fast_MNIST, Fast_SVHN
+from datasets_enrc import Fast_CMNIST
 from load_model import load_model_from_save_dict
 
 # 用 sklearn 的一层 MLP 分类器预测标签，最后报告 test accuracy
@@ -69,6 +70,19 @@ def make_loaders(args, device):
             factors_variation_dict=args.factors_variation_dict,
             factors_label_list=args.factors_label_list,
             seed=args.seed,
+        )
+    elif args.dataset == "fast_cmnist":
+        # ENRC paired-digit MNIST：参数与 load_model.py 中 fast_cmnist 分支保持一致，
+        # 保证评测数据和训练时用的是同一份数据与划分。
+        # 注意：labels 已经是 (N, 2)（第 0 列左侧数字，第 1 列右侧数字），不要再 unsqueeze。
+        target_size = getattr(args, "cmnist_image_size", 32)
+        train_frac = getattr(args, "cmnist_train_frac", 5 / 6)
+        seed = getattr(args, "seed", 42)
+        train_data = Fast_CMNIST(
+            train=True, target_size=target_size, train_frac=train_frac, seed=seed, device=device
+        )
+        test_data = Fast_CMNIST(
+            train=False, target_size=target_size, train_frac=train_frac, seed=seed, device=device
         )
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
@@ -207,7 +221,12 @@ def main():
         model, run_args = load_model_from_save_dict(model_path, map_location=cli_args.device)
         if reference_dataset is None:
             reference_dataset = run_args.dataset
-            label_names = run_args.factors_label_list if run_args.dataset == "fast_3dshapes" else ["digit_class"]
+            if run_args.dataset == "fast_3dshapes":
+                label_names = run_args.factors_label_list
+            elif run_args.dataset == "fast_cmnist":
+                label_names = ["left digit", "right digit"]  # z1倾向学习左边 z2倾向学习右边
+            else:
+                label_names = ["digit_class"]
         elif run_args.dataset != reference_dataset:
             raise ValueError("All checkpoints must use the same dataset.")
 

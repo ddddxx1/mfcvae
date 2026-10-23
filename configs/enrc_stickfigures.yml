@@ -1,0 +1,103 @@
+# Configuration for ENRC Dancing Stickfigures dataset (stickfigures_3sub.data)
+device: cuda:0
+temp_sample_generation: 0.5
+do_fc_batch_norm: false
+seed: 0
+J_n_mixtures: 3 # 3 sub-clusters/facets in Dancing Stickfigures
+activation: relu
+batch_size: 150
+config_args_path: ''
+cov_type_p_z_c: diag
+data_init: false
+dataset: fast_stickfigures
+dataset_on_gpu: true
+dec_backbone_dims:
+- 256
+- 256
+- 256
+dec_backbone_n_hidden:
+- 1
+- 1
+- 1
+dec_rung_dims:
+- 256
+- 512
+- 512
+dec_rung_n_hidden:
+- 1
+- 1
+- 1
+decode_layer_dims:
+- 512
+- 256
+- 256
+do_progressive_training: false
+do_test_during_training: true
+do_vis_cluster_means: true
+do_vis_conf_mat: true
+do_vis_examples_per_cluster: true
+do_vis_latent_code_traversal: false
+do_vis_n_samples_per_cluster: true
+do_vis_pi: true
+do_vis_recon: true
+do_vis_sample_generations_per_cluster: false
+do_vis_test: true
+do_vis_train: true
+enc_backbone_dims:
+- 256
+- 512
+- 512
+enc_backbone_n_hidden:
+- 1
+- 1
+- 1
+enc_rung_dims:
+- -1
+- -1
+- -1
+enc_rung_n_hidden:
+- -1
+- -1
+- -1
+encode_layer_dims:
+- - 256
+  - 256
+- - 256
+  - 256
+- - 256
+  - 256
+eval_batch_size: 180
+facet_to_fix_pi_p_c: all
+fix_pi_p_c: false
+fixed_var_init: 0.01
+gamma_kl_c_pretrain: 0
+gamma_kl_z_pretrain: 0
+init_lr: 0.001
+init_off_diag_cov_p_z_c: false
+init_type_p_z_c: gmm
+lr_decay: 1
+min_lr: null
+model_type: fc_vlae
+n_batches_fade_in: 5000
+n_clusters_j_list:
+- 3
+- 3
+- 3
+n_epochs: 151
+n_epochs_per_progressive_step:
+- 50
+- 50
+- 51
+n_examples_per_cluster: 6
+n_recons_per_cluster: 3
+n_sample_generations_per_cluster: 6
+n_test_batches: -1
+save_model: true
+sigma_multiplier_p_x_z: 0.35
+user: user1
+vis_every_n_epochs: 25
+wandb_mode: disabled
+z_j_dim_list:
+- 5
+- 5
+- 5

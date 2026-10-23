@@ -8,6 +8,7 @@ import os
 import argparse
 
 from datasets import Fast_MNIST, Fast_SVHN, Fast_3DShapes
+from datasets_enrc import Fast_CMNIST, Fast_Stickfigures
 
 from load_model import load_model_from_save_dict
 from plotting import plot_sample_generations_from_each_cluster_torch_grid
@@ -17,6 +18,8 @@ def eval_sample_generation():
     """
     Run this function to perform post-training sample generation plot of a model.
     For more information on the plot, see Section 4.4 and Appendix E.6 of the paper.
+
+    通过生成图片，直观判断 MFCVAE 是否学到了有意义的聚类结构，以及不同 Facet 是否捕获了不同的语义属性。
     """
     parser = argparse.ArgumentParser(description='Evaluation parsing.')
     parser.add_argument('--model_path', type=str, default="pretrained_models/mnist.pt", metavar='N', help="Path to a model file of type .pt .")
@@ -59,6 +62,16 @@ def eval_sample_generation():
                                   factors_variation_dict=args.factors_variation_dict,
                                   factors_label_list=args.factors_label_list,
                                   seed=args.seed)
+    elif args.dataset == 'fast_cmnist':
+        print("Initialize Colored MNIST (ENRC) data and data loaders...")
+        target_size = getattr(args, 'cmnist_image_size', 32)
+        test_data = Fast_CMNIST(train=False, target_size=target_size,
+                                train_frac=getattr(args, 'cmnist_train_frac', 5/6),
+                                seed=args.seed, device=args.device)
+    elif args.dataset == 'fast_stickfigures':
+        print("Initialize Dancing Stickfigures (ENRC) data and data loaders...")
+        test_data = Fast_Stickfigures(train=False, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
+                                      seed=args.seed, device=args.device)
 
     # initialize data loaders
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.eval_batch_size, shuffle=False,
@@ -90,8 +103,10 @@ def eval_sample_generation():
 
     for batch_idx, (x, y_true) in enumerate(test_loader):
         x, y_true = x.to(device), y_true.to(device)
-        if args.dataset == 'fast_mnist':
+        if args.model_type in ['fc_shared', 'fc_per_facet_enc_shared_dec', 'fc_vlae']:
             x = x.view(x.size(0), -1).float()
+        elif args.model_type in ['conv_vlae']:
+            x = x.float()
         global_indices = list(range(batch_idx*args.eval_batch_size, (batch_idx+1)*args.eval_batch_size))
         x_hat, q_z_j_x_list, z_sample_q_z_j_x_list = mfcvae.forward(x, epoch, 0)
         prob_p_c_j_z_j_list = mfcvae.compute_q_c_j_x(z_sample_q_z_j_x_list)
@@ -169,9 +184,15 @@ def plot_sample_generation(row_indices, num_clusters, mfcvae, args, temperature,
     if args.dataset == 'fast_mnist':
         in_channels = 1
         width, height = 28, 28
-    elif args.dataset in ['fast_svhn', 'fast_3dshapes']:
+    elif args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist']:
         in_channels = 3
-        width, height = 32, 32
+        target_size = getattr(args, 'cmnist_image_size', 32)
+        width, height = target_size, target_size
+    elif args.dataset == 'fast_stickfigures':
+        in_channels = 1
+        width, height = 20, 20
+    else:
+        exit("dataset not known")
 
     vis_sample_generations_logged = {}
     for i in range(mfcvae.J_n_mixtures):  # J clusterings
