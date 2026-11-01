@@ -385,8 +385,8 @@ def train():
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
                                                    num_workers=0)  # must be 0 with GPU, good article: https://discuss.pytorch.org/t/cuda-initialization-error-when-dataloader-with-cuda-tensor/43390
     elif args.dataset == 'fast_cmnist':
-        print("Initialize Colored MNIST (ENRC) dataset and data loaders...")
-        target_size = getattr(args, 'cmnist_image_size', 32)    # 带有默认值保护的数据读取 32*32分辨率
+        print("Initialize Concatenated MNIST (ENRC) dataset and data loaders...")
+        target_size = getattr(args, 'cmnist_image_size', 56)
         cmnist_train_frac = getattr(args, 'cmnist_train_frac', 5/6) # 训练集所占比例
         cmnist_root = getattr(args, 'cmnist_root', 'data/enrc_data/cmnist') # 原始图像数据保存路径
         # 控制找出训练集和测试集
@@ -453,13 +453,13 @@ def train():
         likelihood_model = 'Gaussian'
         activation_x_hat_z = None
     elif args.dataset == 'fast_cmnist':
-        target_size = getattr(args, 'cmnist_image_size', 32)
+        target_size = getattr(args, 'cmnist_image_size', 56)
         height, width = target_size, target_size
         n_labels = 2
         chosen_attr_list = ['left_digit', 'right_digit']
         n_true_classes = [10, 10]
-        cmap = 'viridis'
-        in_channels = 3
+        cmap = 'grey'
+        in_channels = 1
         in_dim = height * width * in_channels
         likelihood_model = 'Gaussian'
         activation_x_hat_z = 'sigmoid'

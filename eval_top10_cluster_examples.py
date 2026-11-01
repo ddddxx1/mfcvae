@@ -60,7 +60,7 @@ def eval_top10_cluster_examples():
         test_data.data = test_data.data.to('cpu')
         test_data.labels = test_data.labels.to('cpu')
     elif args.dataset == 'fast_cmnist':
-        target_size = getattr(args, 'cmnist_image_size', 32)
+        target_size = getattr(args, 'cmnist_image_size', 56)
         test_data = Fast_CMNIST(train=False, target_size=target_size,
                                 train_frac=getattr(args, 'cmnist_train_frac', 5/6),
                                 seed=args.seed, device=args.device)
@@ -107,9 +107,12 @@ def plot_top10_cluster_examples(data, mfcvae, args, epoch, results_dir=None, sho
     if args.dataset == 'fast_mnist':
         in_channels = 1
         width, height = 28, 28
-    elif args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist']:
+    elif args.dataset in ['fast_svhn', 'fast_3dshapes']:
         in_channels = 3
-        target_size = getattr(args, 'cmnist_image_size', 32)
+        width, height = 32, 32
+    elif args.dataset == 'fast_cmnist':
+        in_channels = 1
+        target_size = getattr(args, 'cmnist_image_size', 56)
         width, height = target_size, target_size
     elif args.dataset == 'fast_stickfigures':
         in_channels = 1

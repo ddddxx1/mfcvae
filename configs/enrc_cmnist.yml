@@ -1,4 +1,4 @@
-# Configuration for ENRC Colored MNIST (CMNIST) using Convolutional VLAE (recommended for images)
+# Configuration for ENRC Concatenated MNIST: 56x56 single-channel grayscale.
 device: cuda:0
 temp_sample_generation: 0.3
 do_fc_batch_norm: true
@@ -11,7 +11,7 @@ cov_type_p_z_c: full
 data_init: true
 dataset: fast_cmnist
 dataset_on_gpu: true
-cmnist_image_size: 32
+cmnist_image_size: 56
 cmnist_train_frac: 0.8333333333 # 50,000 train, 10,000 test
 dec_backbone_dims:
 - 500
@@ -57,7 +57,33 @@ encode_layer_dims:
 - 2000
 eval_batch_size: 500
 facet_to_fix_pi_p_c: all
-fix_pi_p_c: false
+factors_label_list:
+- left_digit
+- right_digit
+factors_variation_dict:
+  left_digit:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  - 9
+  right_digit:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  - 9
+fix_pi_p_c: true # 聚类先验。权重保持均匀or可向少数 cluster 集中。true: 聚类先验固定为均匀分布，false: 聚类先验可学习
 fixed_var_init: 0.01
 gamma_kl_c_pretrain: 0
 gamma_kl_z_pretrain: 0
@@ -66,9 +92,9 @@ init_off_diag_cov_p_z_c: false
 init_type_p_z_c: gmm
 lr_decay: 1
 min_lr: null
-model_type: conv_vlae # Convolutional VLAE for 32x32 RGB
+model_type: conv_vlae # Convolutional VLAE for 56x56 grayscale
 n_batches_fade_in: 10000
-n_clusters_j_list:
+n_clusters_j_list:  # 每个 facet 都预设 10 个聚类簇（相似样本）
 - 10
 - 10
 n_epochs: 202
@@ -83,7 +109,7 @@ save_model: true
 sigma_multiplier_p_x_z: 0.3
 user: user1
 vis_every_n_epochs: 25
-wandb_mode: disabled # 改为 online 可上传到 wandb
+wandb_mode: online # 改为 online 可上传到 wandb
 z_j_dim_list:
 - 16
 - 16

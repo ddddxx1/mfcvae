@@ -75,7 +75,7 @@ def make_loaders(args, device):
         # ENRC paired-digit MNIST：参数与 load_model.py 中 fast_cmnist 分支保持一致，
         # 保证评测数据和训练时用的是同一份数据与划分。
         # 注意：labels 已经是 (N, 2)（第 0 列左侧数字，第 1 列右侧数字），不要再 unsqueeze。
-        target_size = getattr(args, "cmnist_image_size", 32)
+        target_size = getattr(args, "cmnist_image_size", 56)
         train_frac = getattr(args, "cmnist_train_frac", 5 / 6)
         seed = getattr(args, "seed", 42)
         train_data = Fast_CMNIST(

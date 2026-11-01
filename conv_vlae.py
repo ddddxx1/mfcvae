@@ -13,7 +13,29 @@ from utils import build_fc_network, softplus_inverse, softplus_inverse_numpy, bu
 from typing import List
 
 
+def _image_spec(in_dim: int):
+    """返回支持的卷积输入的通道数和边长。"""
+    specs = {
+        784: (1, 28),
+        3072: (3, 32),
+        3136: (1, 56),
+    }
+    try:
+        return specs[in_dim]
+    except KeyError as error:
+        raise ValueError(
+            "conv_vlae supports 28x28 grayscale, 32x32 RGB, and 56x56 grayscale inputs; "
+            f"received in_dim={in_dim}."
+        ) from error
+
+
 class ResidualConvBlock(nn.Module):
+    """
+    残差卷积模块，帮助网络提取特征
+
+    网络不需要完全重新学习一个特征表示，而是可以在原始特征的基础上学习需要补充或修改的信息。
+    改善梯度传播
+    """
     def __init__(self, n_channels: int, activation: str = 'relu'):
         super(ResidualConvBlock, self).__init__()
 
@@ -43,6 +65,11 @@ class ResidualConvBlock(nn.Module):
 
 class CONVvlaeEncoderCelebA(nn.Module):
     """
+    卷积编码器，将图片转换为不同 Facet 的特征
+
+    Args:
+        in_dim: 输入图片的维度，通常为 784 (28x28 灰度图), 3072 (32x32 RGB 图), 或 3136 (56x56 灰度图)
+
     See implementation in https://github.com/Zhiyuan1991/proVLAE/blob/master/model_ladder_pro_celbA.py for inspiration of architecture.
     """
     def __init__(self, in_dim: int, J_n_mixtures: int = 2, activation: str = "relu", add_resid_backbone: bool = False,
@@ -69,18 +96,9 @@ class CONVvlaeEncoderCelebA(nn.Module):
 
         assert J_n_mixtures == 2 or J_n_mixtures == 3
 
-        # construct network
-        b_lower_dim = in_dim
-
         self.conv_backbone_out_sizes = [16, 8, 4, 2, 1]
         self.conv_rung_out_sizes = [8, 4, 2, 1, 1]
-
-        if in_dim == 784:
-            # MNIST/Fashion-MNIST
-            in_channels = 1
-        elif in_dim == 3072:
-            # C10/SVHN:
-            in_channels = 3
+        in_channels, image_size = _image_spec(in_dim)
 
         self.conv_backbone_0.append(build_cnn_network(in_channels=in_channels,
                                                         out_channels=64,
@@ -150,7 +168,12 @@ class CONVvlaeEncoderCelebA(nn.Module):
                                                     stride=2,
                                                     activation=activation))
 
-        self.encoder_output_dims = [3136, 1024, 512]
+        # A 56x56 input reaches 13x13 and 3x3 feature maps in rung 0 and 1.
+        # Preserve the existing dimensions for the legacy 28x28/32x32 paths.
+        if image_size == 56:
+            self.encoder_output_dims = [64 * 13 * 13, 256 * 3 * 3, 512]
+        else:
+            self.encoder_output_dims = [3136, 1024, 512]
 
         if add_resid_backbone:
             for i in range(n_blocks_resid):
@@ -214,6 +237,7 @@ class CONVvlaeEncoderCelebA(nn.Module):
 
 class CONVvlaeDecoderCelebA(nn.Module):
     """
+    卷积解码器，结合不同 Facet 的潜变量重建图片
     See implementation in https://github.com/Zhiyuan1991/proVLAE/blob/master/model_ladder_pro_celbA.py for inspiration of architecture.
     """
     def __init__(self, J_n_mixtures: int, in_dim: int, z_j_dim_list: List[int], activation: str = "relu",
@@ -241,16 +265,17 @@ class CONVvlaeDecoderCelebA(nn.Module):
         self.conv_backbone_out_sizes = [16, 8, 4, 2, 1]
         self.conv_rung_out_sizes = [8, 4, 2, 1, 1]
 
-        if in_dim == 784:
-            # MNIST/Fashion-MNIST
-            out_channels = 1
-        elif in_dim == 3072:
-            # C10/SVHN:
-            out_channels = 3
+        out_channels, image_size = _image_spec(in_dim)
+        # The decoder doubles the rung-0 spatial size in its final layer.  The
+        # 56x56 path therefore uses 28x28 and 14x14 rung feature maps.
+        rung_0_size, rung_1_size, rung_2_size = (28, 14, 7) if image_size == 56 else (16, 8, 4)
+        self.rung_0_size = rung_0_size
+        self.rung_1_size = rung_1_size
+        self.rung_2_size = rung_2_size
 
         # yes, this large!
         if J_n_mixtures == 3:
-            self.mlp_rung_2.append(build_fc_network(layer_dims=[z_j_dim_list[2], 4 * 4 * 512], activation=activation, batch_norm=do_fc_batch_norm))
+            self.mlp_rung_2.append(build_fc_network(layer_dims=[z_j_dim_list[2], rung_2_size * rung_2_size * 512], activation=activation, batch_norm=do_fc_batch_norm))
 
             self.conv_backbone_2.append(build_cnn_network(in_channels=512,
                                                         out_channels=512,  # different to below
@@ -267,7 +292,7 @@ class CONVvlaeDecoderCelebA(nn.Module):
                                                         activation=activation))
 
         # yes, this large!
-        self.mlp_rung_1.append(build_fc_network(layer_dims=[z_j_dim_list[1], 8 * 8 * 256], activation=activation, batch_norm=do_fc_batch_norm))
+        self.mlp_rung_1.append(build_fc_network(layer_dims=[z_j_dim_list[1], rung_1_size * rung_1_size * 256], activation=activation, batch_norm=do_fc_batch_norm))
 
         self.conv_backbone_1.append(build_cnn_network(in_channels=256 if self.J_n_mixtures == 2 else 512,
                                                     out_channels=128,
@@ -283,7 +308,7 @@ class CONVvlaeDecoderCelebA(nn.Module):
                                                     stride=1,
                                                     activation=activation))
 
-        self.mlp_rung_0.append(build_fc_network(layer_dims=[z_j_dim_list[0], 16 * 16 * 64], activation=activation, batch_norm=do_fc_batch_norm))
+        self.mlp_rung_0.append(build_fc_network(layer_dims=[z_j_dim_list[0], rung_0_size * rung_0_size * 64], activation=activation, batch_norm=do_fc_batch_norm))
 
         # option 1: last layer with regular building block
         self.conv_backbone_0.append(build_cnn_network(in_channels=128,  # since merged
@@ -325,7 +350,7 @@ class CONVvlaeDecoderCelebA(nn.Module):
     def forward(self, z_sample_q_z_j_x_list: List[torch.tensor]):
         # j = 2
         if self.J_n_mixtures == 3:  # TODO capital J and lower-case j are inconsistent (one-off) -> are they?
-            r = self.mlp_rung_2[0](z_sample_q_z_j_x_list[2]).view(-1, 512, 4, 4)
+            r = self.mlp_rung_2[0](z_sample_q_z_j_x_list[2]).view(-1, 512, self.rung_2_size, self.rung_2_size)
             if self.do_progressive_training:
                 r_aux = r * self.alpha_dec_fade_in_list[2]
             else:
@@ -337,7 +362,7 @@ class CONVvlaeDecoderCelebA(nn.Module):
             b = self.conv_backbone_2[0](b)
             b = self.conv_backbone_2[1](b)
         # j = 1
-        r = self.mlp_rung_1[0](z_sample_q_z_j_x_list[1]).view(-1, 256, 8, 8)
+        r = self.mlp_rung_1[0](z_sample_q_z_j_x_list[1]).view(-1, 256, self.rung_1_size, self.rung_1_size)
         if self.do_progressive_training:
             r_aux = r * self.alpha_dec_fade_in_list[1]
         else:
@@ -352,7 +377,7 @@ class CONVvlaeDecoderCelebA(nn.Module):
         b = self.conv_backbone_1[0](b)
         b = self.conv_backbone_1[1](b)
         # j = 0
-        r = self.mlp_rung_0[0](z_sample_q_z_j_x_list[0]).view(-1, 64, 16, 16)
+        r = self.mlp_rung_0[0](z_sample_q_z_j_x_list[0]).view(-1, 64, self.rung_0_size, self.rung_0_size)
         if self.do_progressive_training:
             r_aux = r * self.alpha_dec_fade_in_list[0]
         else:

@@ -51,13 +51,13 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
         activation_x_hat_z = None  # 'sigmoid'  # 'sigmoid'  #  None  # 'sigmoid'
         n_labels = len(args.factors_label_list)
     elif args.dataset == 'fast_cmnist':
-        target_size = getattr(args, 'cmnist_image_size', 32)
+        target_size = getattr(args, 'cmnist_image_size', 56)
         height, width = target_size, target_size
         n_labels = 2
         chosen_attr_list = ['left_digit', 'right_digit']
         n_true_classes = [10, 10]
-        cmap = 'viridis'
-        in_channels = 3
+        cmap = 'grey'
+        in_channels = 1
         in_dim = height * width * in_channels
         likelihood_model = 'Gaussian'
         activation_x_hat_z = 'sigmoid'
@@ -85,7 +85,7 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
                                                      factors_label_list=args.factors_label_list)
         n_train_batches_per_epoch = int(len(train_data) / args.batch_size)
     elif args.dataset == 'fast_cmnist':
-        target_size = getattr(args, 'cmnist_image_size', 32)
+        target_size = getattr(args, 'cmnist_image_size', 56)
         train_data = Fast_CMNIST(train=True, target_size=target_size,
                                  train_frac=getattr(args, 'cmnist_train_frac', 5/6),
                                  seed=getattr(args, 'seed', 42), device='cpu')

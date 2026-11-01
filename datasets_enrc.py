@@ -2,13 +2,13 @@
 ENRC Benchmark Datasets for MFCVAE
 Datasets from 'Deep Embedded Non-Redundant Clustering' (Miklautz et al., AAAI 2020)
 Currently supporting:
-1. Fast_CMNIST: paired-digit MNIST (60,000 RGB images, 10 left digits x 10 right digits = 100 classes, 2 facets)
+1. Fast_CMNIST: paired-digit MNIST (60,000 grayscale 56x56 images, 10 left digits x 10 right digits = 100 classes, 2 facets)
 2. Fast_Stickfigures: Dancing Stickfigures (900 grayscale images 20x20, 3 facets x 3 classes)
 
 将数据集转化为PyTorch可以直接用于训练和评估的格式
 用于 MFCVAE 的 ENRC 基准数据集，来自《Deep Embedded Non-Redundant Clustering》（Miklautz 等，AAAI 2020）
 当前支持：
-1. Fast_CMNIST：双数字 MNIST（60,000 张 RGB 图片，10 个左侧数字 × 10 个右侧数字 = 100 类，2 个方面）
+1. Fast_CMNIST：双数字 MNIST（60,000 张 56x56 灰度图片，10 个左侧数字 × 10 个右侧数字 = 100 类，2 个方面）
 2. Fast_Stickfigures：跳舞火柴人（900 张灰度图 20x20，3 个方面 × 3 类）
 """
 
@@ -38,7 +38,7 @@ class Fast_CMNIST(Dataset):
     def __init__(self,
                  root: str = 'data/enrc_data/cmnist',
                  train: bool = True,
-                 target_size: int = 32,
+                 target_size: int = 56,
                  train_frac: float = 5/6,  # 50,000 train, 10,000 test
                  seed: int = 42,
                  device: str = 'cpu',
@@ -49,7 +49,9 @@ class Fast_CMNIST(Dataset):
         self.device = torch.device(device)
 
         # 缓存机制，节约时间
-        cache_path = os.path.join(os.path.dirname(root), f"cmnist_cache_{target_size}x{target_size}.pt")
+        # 灰度缓存与传统的 RGB 缓存不同。
+        cache_path = os.path.join(
+            os.path.dirname(root), f"cmnist_cache_gray_{target_size}x{target_size}.pt")
 
         if os.path.exists(cache_path) and not force_reprocess:
             print(f"[Fast_CMNIST] Loading preprocessed data from cache: {cache_path}")
@@ -104,15 +106,15 @@ class Fast_CMNIST(Dataset):
         print(f"[Fast_CMNIST] Found {total_images} images across {len(folder_names)} folders.")
 
         # 图片和labels存储成tensor
-        data_tensor = torch.zeros((total_images, 3, target_size, target_size), dtype=torch.float32)
+        data_tensor = torch.zeros((total_images, 1, target_size, target_size), dtype=torch.float32)
         labels_tensor = torch.zeros((total_images, 2), dtype=torch.long)
 
         for i, (path, left_digit_label, right_digit_label) in enumerate(image_entries):
-            img = Image.open(path).convert('RGB')   # RGB格式，所有图片都有三个通道
+            # ENRC C-MNIST 是一个单通道灰度数据集。
+            img = Image.open(path).convert('L')
             if img.size != (target_size, target_size):  # 调整原始图片尺寸
                 img = img.resize((target_size, target_size), Image.BILINEAR)    # 双线性插值
-            arr = np.array(img, dtype=np.float32) / 255.0  # (H, W, C) 归一化
-            arr = np.transpose(arr, (2, 0, 1))             # (C, H, W)  PyTorch卷积神经网络格式
+            arr = np.array(img, dtype=np.float32)[None, ...] / 255.0  # (1, H, W)
             data_tensor[i] = torch.from_numpy(arr)
             labels_tensor[i, 0] = left_digit_label  # facet0
             labels_tensor[i, 1] = right_digit_label # facet1
