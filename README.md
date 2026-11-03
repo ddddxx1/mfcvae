@@ -221,6 +221,29 @@ Alternatively, you can download it from the run page -> Files (left-hand side) -
 Then, to get all result figures (input examples, generations, compositionality), store the model in the folder
 `new_trained_models/` and adapt the `eval_<dataset>.sh` to use the correct path (or use the `eval_<dataset>.py` scripts directly).
 
+### ENRC GTSRB subset
+
+`configs/enrc_gtsrb.yml` trains two facets on the 6,720 images in
+`data/enrc_data/gtsrb/train/{00004,00009,00035,00038}`. Type labels are
+speed limit 70, no passing, ahead only, and keep right (4 clusters); color
+labels are red and blue (2 clusters). The four type classes determine their
+colors in this subset, so the two ground-truth labels are correlated.
+
+Each image is available as an original PPM (Netpbm RGB pixmap) and a
+contrast-enhanced PNG with the same stem. `Fast_GTSRB` counts each stem once,
+prefers PNG, converts it to 32×32 RGB values in `[0,1]`, and caches the result.
+The train/test split is seeded and stratified by class at the 30-frame track
+level, so adjacent frames cannot appear in both splits. This is a new split
+within the supplied training subset; no separate official test files are used.
+
+Submit the three-seed training array with
+`sbatch shell_scripts/run_ENRCgtsrb_3seed.sh`. To evaluate checkpoints, set
+`SEED0_PATH`, `SEED1_PATH`, and `SEED2_PATH` to their `save_dict.pt` files and
+submit `sbatch shell_scripts/evaluate_gtsrb_cluster_accuracy_3seed.sh`.
+Evaluation writes Hungarian-matched type/color accuracy, contingency tables,
+latent centers, and a decoded RGB atlas. For input/reconstruction pairs, run
+`PYTHONPATH=$PWD:$PWD/evaluation python evaluation/visualize_gtsrb_reconstructions.py --model_path PATH`.
+
 ### Reproduce results by running a seed sweep 
 
 As we argue in the paper, stability is crucial in deep clustering, and one way to test it 

@@ -9,7 +9,7 @@ from sklearn.neural_network import MLPClassifier
 from torchvision import transforms
 
 from datasets import Fast_3DShapes, Fast_MNIST, Fast_SVHN
-from datasets_enrc import Fast_CMNIST
+from datasets_enrc import Fast_CMNIST, Fast_GTSRB
 from load_model import load_model_from_save_dict
 
 # 用 sklearn 的一层 MLP 分类器预测标签，最后报告 test accuracy
@@ -84,6 +84,15 @@ def make_loaders(args, device):
         test_data = Fast_CMNIST(
             train=False, target_size=target_size, train_frac=train_frac, seed=seed, device=device
         )
+    elif args.dataset == "fast_gtsrb":
+        data_kwargs = dict(
+            root=getattr(args, "gtsrb_root", "data/enrc_data/gtsrb"),
+            train_frac=getattr(args, "gtsrb_train_frac", 0.8),
+            seed=getattr(args, "seed", 42),
+            device=device,
+        )
+        train_data = Fast_GTSRB(train=True, **data_kwargs)
+        test_data = Fast_GTSRB(train=False, **data_kwargs)
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
@@ -225,6 +234,8 @@ def main():
                 label_names = run_args.factors_label_list
             elif run_args.dataset == "fast_cmnist":
                 label_names = ["left digit", "right digit"]  # z1倾向学习左边 z2倾向学习右边
+            elif run_args.dataset == "fast_gtsrb":
+                label_names = ["type", "color"]
             else:
                 label_names = ["digit_class"]
         elif run_args.dataset != reference_dataset:

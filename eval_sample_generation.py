@@ -8,7 +8,7 @@ import os
 import argparse
 
 from datasets import Fast_MNIST, Fast_SVHN, Fast_3DShapes
-from datasets_enrc import Fast_CMNIST, Fast_Stickfigures
+from datasets_enrc import Fast_CMNIST, Fast_Stickfigures, Fast_GTSRB
 
 from load_model import load_model_from_save_dict
 from plotting import plot_sample_generations_from_each_cluster_torch_grid
@@ -68,6 +68,11 @@ def eval_sample_generation():
         test_data = Fast_CMNIST(train=False, target_size=target_size,
                                 train_frac=getattr(args, 'cmnist_train_frac', 5/6),
                                 seed=args.seed, device=args.device)
+    elif args.dataset == 'fast_gtsrb':
+        print("Initialize GTSRB (ENRC) data and data loaders...")
+        test_data = Fast_GTSRB(root=getattr(args, 'gtsrb_root', 'data/enrc_data/gtsrb'),
+                               train=False, train_frac=getattr(args, 'gtsrb_train_frac', 0.8),
+                               seed=args.seed, device=args.device)
     elif args.dataset == 'fast_stickfigures':
         print("Initialize Dancing Stickfigures (ENRC) data and data loaders...")
         test_data = Fast_Stickfigures(train=False, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
@@ -184,7 +189,7 @@ def plot_sample_generation(row_indices, num_clusters, mfcvae, args, temperature,
     if args.dataset == 'fast_mnist':
         in_channels = 1
         width, height = 28, 28
-    elif args.dataset in ['fast_svhn', 'fast_3dshapes']:
+    elif args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_gtsrb']:
         in_channels = 3
         width, height = 32, 32
     elif args.dataset == 'fast_cmnist':

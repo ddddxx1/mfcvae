@@ -3,7 +3,7 @@ from mfcvae import MFCVAE
 import torch
 from torchvision.datasets import MNIST, SVHN
 from datasets import Fast_3DShapes
-from datasets_enrc import Fast_CMNIST, Fast_Stickfigures
+from datasets_enrc import Fast_CMNIST, Fast_Stickfigures, Fast_GTSRB
 import torchvision
 from torchvision import transforms
 
@@ -61,6 +61,16 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
         in_dim = height * width * in_channels
         likelihood_model = 'Gaussian'
         activation_x_hat_z = 'sigmoid'
+    elif args.dataset == 'fast_gtsrb':
+        height, width = 32, 32
+        n_labels = 2
+        chosen_attr_list = ['type', 'color']
+        n_true_classes = [4, 2]
+        cmap = 'viridis'
+        in_channels = 3
+        in_dim = 32 * 32 * in_channels
+        likelihood_model = 'Gaussian'
+        activation_x_hat_z = 'sigmoid'
     elif args.dataset == 'fast_stickfigures':
         height, width = 20, 20
         n_labels = 3
@@ -89,6 +99,11 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
         train_data = Fast_CMNIST(train=True, target_size=target_size,
                                  train_frac=getattr(args, 'cmnist_train_frac', 5/6),
                                  seed=getattr(args, 'seed', 42), device='cpu')
+        n_train_batches_per_epoch = int(len(train_data) / args.batch_size)
+    elif args.dataset == 'fast_gtsrb':
+        train_data = Fast_GTSRB(root=getattr(args, 'gtsrb_root', 'data/enrc_data/gtsrb'),
+                                train=True, train_frac=getattr(args, 'gtsrb_train_frac', 0.8),
+                                seed=getattr(args, 'seed', 42), device='cpu')
         n_train_batches_per_epoch = int(len(train_data) / args.batch_size)
     elif args.dataset == 'fast_stickfigures':
         train_data = Fast_Stickfigures(train=True, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),

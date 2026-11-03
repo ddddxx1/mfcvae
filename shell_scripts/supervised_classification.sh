@@ -5,19 +5,28 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=02:30:00
 #SBATCH --job-name=supervised_class
-#SBATCH --output=../logs/supervised_classification-cmnist56-AddDigit-sample-%j.out
-#SBATCH --error=../logs/supervised_classification-cmnist56-AddDigit-sample-%j.err
+#SBATCH --output=../logs/supervised_classification-ENRCgtsrb-%j.out
+#SBATCH --error=../logs/supervised_classification-ENRCgtsrb-%j.err
+
+set -euo pipefail
+
+cd /nfs/data8/dong/mfcvae
+PYTHON_BIN="$PWD/mfcvae-repo-cluster/bin/python"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+    echo "Python interpreter not found: $PYTHON_BIN" >&2
+    exit 1
+fi
+export PYTHONPATH="$PWD:$PWD/evaluation${PYTHONPATH:+:$PYTHONPATH}"
 
 source /nfs/data8/dong/mfcvae/notify/notify.sh
 send_bark "集群任务开始" \
     "任务: ${SLURM_JOB_NAME} 已开始。" || echo "开始通知发送失败" >&2
 
-cd ..
-./mfcvae-repo-cluster/bin/python -u supervised_classification.py \
+"$PYTHON_BIN" -u evaluation/supervised_classification.py \
   --model_path \
-    wandb/run-20261027_152912-i27oz50s/files/save_dict.pt \
-    wandb/run-20261027_152913-lmxniip8/files/save_dict.pt \
-    wandb/run-20261027_153402-xpgmwqmv/files/save_dict.pt \
+    wandb/run-ENRCgtsrb-main-v1/run-20261103_165056-die055e7/files/save_dict.pt \
+    wandb/run-ENRCgtsrb-main-v1/run-20261103_165058-ybzkk88o/files/save_dict.pt \
+    wandb/run-ENRCgtsrb-main-v1/run-20261103_165156-y73kd9sg/files/save_dict.pt \
   --device cuda:0 \
   --embedding_mode sample \
   --n_runs 3 \

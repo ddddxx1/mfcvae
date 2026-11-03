@@ -6,7 +6,7 @@ import os
 import argparse
 
 from datasets import Fast_MNIST, Fast_SVHN, Fast_3DShapes
-from datasets_enrc import Fast_CMNIST, Fast_Stickfigures
+from datasets_enrc import Fast_CMNIST, Fast_Stickfigures, Fast_GTSRB
 from load_model import load_model_from_save_dict
 from plotting import plot_cluster_examples_torch_grid
 
@@ -66,6 +66,10 @@ def eval_top10_cluster_examples():
                                 seed=args.seed, device=args.device)
         test_data.data = test_data.data.to('cpu')
         test_data.labels = test_data.labels.to('cpu')
+    elif args.dataset == 'fast_gtsrb':
+        test_data = Fast_GTSRB(root=getattr(args, 'gtsrb_root', 'data/enrc_data/gtsrb'),
+                               train=False, train_frac=getattr(args, 'gtsrb_train_frac', 0.8),
+                               seed=args.seed, device='cpu')
     elif args.dataset == 'fast_stickfigures':
         test_data = Fast_Stickfigures(train=False, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
                                       seed=args.seed, device=args.device)
@@ -107,7 +111,7 @@ def plot_top10_cluster_examples(data, mfcvae, args, epoch, results_dir=None, sho
     if args.dataset == 'fast_mnist':
         in_channels = 1
         width, height = 28, 28
-    elif args.dataset in ['fast_svhn', 'fast_3dshapes']:
+    elif args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_gtsrb']:
         in_channels = 3
         width, height = 32, 32
     elif args.dataset == 'fast_cmnist':

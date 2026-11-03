@@ -4,6 +4,7 @@ Datasets from 'Deep Embedded Non-Redundant Clustering' (Miklautz et al., AAAI 20
 Currently supporting:
 1. Fast_CMNIST: paired-digit MNIST (60,000 grayscale 56x56 images, 10 left digits x 10 right digits = 100 classes, 2 facets)
 2. Fast_Stickfigures: Dancing Stickfigures (900 grayscale images 20x20, 3 facets x 3 classes)
+3. Fast_GTSRB: four traffic sign types and two colors (6,720 RGB images 32x32)
 
 将数据集转化为PyTorch可以直接用于训练和评估的格式
 用于 MFCVAE 的 ENRC 基准数据集，来自《Deep Embedded Non-Redundant Clustering》（Miklautz 等，AAAI 2020）
@@ -17,6 +18,106 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset
 from typing import Optional
+
+
+class Fast_GTSRB(Dataset):
+    """ENRC's four-sign GTSRB subset. Labels are [type, color].
+
+    Class IDs 4/9 are red signs; 35/38 are blue signs. Each track's
+    30 adjacent frames stay in the same split to avoid near-duplicate leakage.
+    PNG is the supplied contrast-enhanced image; PPM is the original Netpbm
+    RGB image. Same-stem files represent one observation, never two.
+
+    数据集按照Track进行划分，否则会出现训练集和测试集包含同一个真实交通标志的照片 - Data Leakage
+    模型可能只需要记住训练图片中的视觉特征，就能够很好地处理测试图片。
+    """
+
+    TYPE_IDS = (4, 9, 35, 38)
+    TYPE_NAMES = ('speed_limit_70', 'no_passing', 'ahead_only', 'keep_right')
+    COLOR_NAMES = ('red', 'blue')
+
+    def __init__(self, root='data/enrc_data/gtsrb', train=True,
+                 target_size=32, train_frac=0.8, seed=42, device='cpu',
+                 force_reprocess=False):
+        super().__init__()
+        if not 0 < train_frac < 1:
+            raise ValueError('train_frac must be between zero and one')
+        if target_size != 32:
+            raise ValueError('Fast_GTSRB uses 32x32 RGB images for conv_vlae')
+        self.device = torch.device(device)
+        cache_path = os.path.join(root, 'gtsrb_cache_rgb32_v1.pt')
+        if os.path.isfile(cache_path) and not force_reprocess:
+            try:
+                saved = torch.load(cache_path, map_location='cpu', weights_only=False)
+            except TypeError:
+                saved = torch.load(cache_path, map_location='cpu')
+        else:
+            saved = self._preprocess(root, cache_path)
+        all_data, all_labels, groups = saved['data'], saved['labels'], saved['groups']
+        # Split tracks independently within each sign type, using a local RNG.
+        rng = np.random.default_rng(seed)
+        selected = np.zeros(len(groups), dtype=bool)
+        for type_id in self.TYPE_IDS:   # 4次循环对应4个type_id
+            type_groups = sorted({group for group in groups if group[0] == type_id})    # 获取当前类别的所有Track
+            perm = rng.permutation(len(type_groups))    # 随机打乱Track的索引
+            n_train = max(1, min(len(type_groups) - 1, int(len(type_groups) * train_frac))) # 当前类别应该选择多少个 Track 作为训练集
+            train_groups = {type_groups[i] for i in perm[:n_train]} # 选择训练Track
+            chosen = train_groups if train else set(type_groups) - train_groups
+            selected |= np.array([group in chosen for group in groups])
+        indices = np.flatnonzero(selected)
+        self.data = all_data[indices].to(self.device)
+        self.labels = all_labels[indices].to(self.device)
+        self.groups = [groups[i] for i in indices]
+        print(f'[Fast_GTSRB] {"Train" if train else "Test"}: {len(self.data)} images on {self.device}')
+
+    # 读取原始图片，转换为tensor，并保存缓存
+    @classmethod
+    def _preprocess(cls, root, cache_path):
+        from PIL import Image
+
+        entries = []
+        for type_index, type_id in enumerate(cls.TYPE_IDS):
+            folder = os.path.join(root, 'train', f'{type_id:05d}')
+            if not os.path.isdir(folder):
+                raise FileNotFoundError(f'Missing GTSRB class folder: {folder}')
+            paths = {}
+            for name in sorted(os.listdir(folder)):
+                stem, ext = os.path.splitext(name)
+                if ext.lower() in ('.png', '.ppm'):
+                    # Prefer the supplied enhanced PNG; retain PPM support.
+                    if stem not in paths or ext.lower() == '.png':
+                        paths[stem] = os.path.join(folder, name)
+            for stem, path in sorted(paths.items()):
+                track, frame = stem.split('_')  # dataset: track_frame.png
+                if not (track.isdigit() and frame.isdigit()):
+                    raise ValueError(f'Unexpected GTSRB filename: {path}')
+                entries.append((path, type_index, 0 if type_id in (4, 9) else 1,
+                                (type_id, int(track))))
+        if not entries:
+            raise RuntimeError(f'No GTSRB images in {root}')
+        data = torch.empty((len(entries), 3, 32, 32), dtype=torch.float32)
+        labels = torch.empty((len(entries), 2), dtype=torch.long)
+        groups = []
+        for i, (path, type_label, color_label, group) in enumerate(entries):
+            with Image.open(path) as image:
+                image = image.convert('RGB')
+                if image.size != (32, 32):
+                    image = image.resize((32, 32), Image.BILINEAR)
+                data[i] = torch.from_numpy(np.asarray(image, dtype=np.float32).transpose(2, 0, 1).copy()) / 255.0
+            labels[i] = torch.tensor((type_label, color_label))
+            groups.append(group)
+        saved = {'data': data, 'labels': labels, 'groups': groups}
+        torch.save(saved, cache_path)
+        print(f'[Fast_GTSRB] Cached {len(entries)} distinct RGB images to {cache_path}')
+        return saved
+
+    # 返回数据集中的图片数量
+    def __len__(self):
+        return len(self.data)
+
+    # 根据索引返回图片和标签
+    def __getitem__(self, index):
+        return self.data[index], self.labels[index]
 
 
 class Fast_CMNIST(Dataset):
