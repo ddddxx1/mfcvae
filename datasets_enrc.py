@@ -5,6 +5,7 @@ Currently supporting:
 1. Fast_CMNIST: paired-digit MNIST (60,000 grayscale 56x56 images, 10 left digits x 10 right digits = 100 classes, 2 facets)
 2. Fast_Stickfigures: Dancing Stickfigures (900 grayscale images 20x20, 3 facets x 3 classes)
 3. Fast_GTSRB: four traffic sign types and two colors (6,720 RGB images 32x32)
+4. Fast_NRObjects: single objects with color/material/shape labels (10,000 RGB images resized to 32x32)
 
 将数据集转化为PyTorch可以直接用于训练和评估的格式
 用于 MFCVAE 的 ENRC 基准数据集，来自《Deep Embedded Non-Redundant Clustering》（Miklautz 等，AAAI 2020）
@@ -14,6 +15,9 @@ Currently supporting:
 """
 
 import os
+import json
+from pathlib import Path
+import tempfile
 import torch
 import numpy as np
 from torch.utils.data import Dataset
@@ -301,6 +305,108 @@ class Fast_Stickfigures(Dataset):
         self.labels = all_labels[indices].to(self.device)
         split_name = "Train" if train else "Test"
         print(f"[Fast_Stickfigures] {split_name} set initialized: {len(self.data)} samples on device {self.device}")
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        return self.data[index], self.labels[index]
+
+
+class Fast_NRObjects(Dataset):
+    """ENRC single-object renders, with labels [color, material, shape].
+
+    Read individual scenes, not the incomplete root aggregate JSON. Images
+    are resized from 128x128 to the existing conv_vlae RGB input size (32x32).
+    The deterministic split is stratified by all three attributes together.
+
+    NRC 单对象渲染，带有标签 [颜色、材质、形状]。
+    读取单个场景，而不是不完整的根聚合 JSON。图像从 128x128 调整为现有的 conv_vlae RGB 输入尺寸（32x32）。确定性拆分是基于三种属性一起进行分层的。
+    """
+
+    FACTOR_NAMES = ('color', 'material', 'shape')
+    COLOR_NAMES = ('blue', 'gray', 'green', 'purple', 'red', 'yellow')
+    MATERIAL_NAMES = ('metal', 'rubber')
+    SHAPE_NAMES = ('cube', 'cylinder', 'sphere')
+    LABEL_NAMES = (COLOR_NAMES, MATERIAL_NAMES, SHAPE_NAMES)
+
+    def __init__(self,
+                 root='data/enrc_data/nr_objects',
+                 train=True,
+                 target_size=32,
+                 train_frac=0.8,
+                 seed=42,
+                 device='cpu',
+                 force_reprocess=False,
+                 factors_label_list=None):
+        super().__init__()
+        if not 0 < train_frac < 1:
+            raise ValueError('train_frac must be between zero and one')
+        if target_size != 32:
+            raise ValueError('Fast_NRObjects uses 32x32 RGB images')
+        self.factors_label_list = list(factors_label_list or self.FACTOR_NAMES)
+        if (not self.factors_label_list or len(set(self.factors_label_list)) != len(self.factors_label_list)
+                or any(name not in self.FACTOR_NAMES for name in self.factors_label_list)):
+            raise ValueError('Select distinct NRObjects factors: color, material, shape')
+        self.device = torch.device(device)
+        root = Path(root)
+        # 优先加载缓存，首次运行才处理图片
+        cache_path = root / 'nr_objects_cache_rgb32_v1.pt'
+        if cache_path.is_file() and not force_reprocess:
+            try:
+                saved = torch.load(cache_path, map_location='cpu', weights_only=False)
+            except TypeError:
+                saved = torch.load(cache_path, map_location='cpu')
+        else:
+            saved = self._preprocess(root)
+            # Array jobs may start together: publish only a complete cache.
+            with tempfile.NamedTemporaryFile(dir=root, suffix='.pt', delete=False) as f:
+                temporary = f.name
+            try:
+                torch.save(saved, temporary)
+                os.replace(temporary, cache_path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        rng = np.random.default_rng(seed)
+        labels = saved['labels'].numpy()
+        selected = []
+        for combination in np.unique(labels, axis=0):
+            indices = rng.permutation(np.flatnonzero((labels == combination).all(axis=1)))
+            if len(indices) < 2:
+                raise ValueError(f'Need at least two images for combination {combination}')
+            n_train = max(1, min(len(indices) - 1, int(len(indices) * train_frac)))
+            selected.extend(indices[:n_train] if train else indices[n_train:])
+        self.indices = np.sort(selected)
+        self.data = saved['data'][self.indices].to(self.device)
+        columns = [self.FACTOR_NAMES.index(name) for name in self.factors_label_list]
+        self.labels = saved['labels'][self.indices][:, columns].to(self.device)
+        self.image_filenames = [saved['image_filenames'][i] for i in self.indices]
+        print(f'[Fast_NRObjects] {"Train" if train else "Test"}: {len(self.data)} images on {self.device}')
+
+    @classmethod
+    def _preprocess(cls, root):
+        from PIL import Image
+
+        paths = sorted((root / 'images' / 'train').glob('*.png'))
+        if not paths:
+            raise FileNotFoundError(f'No images found in {root / "images" / "train"}')
+        data = torch.empty((len(paths), 3, 32, 32), dtype=torch.float32)
+        labels = torch.empty((len(paths), 3), dtype=torch.long)
+        # 逐张读取图片对应的json
+        for i, path in enumerate(paths):
+            scene_path = root / 'scenes' / (path.stem + '.json')
+            with scene_path.open() as f:
+                scene = json.load(f)
+            if scene['image_filename'] != path.name or len(scene['objects']) != 1:
+                raise ValueError(f'Expected matching single-object scene: {scene_path}')
+            obj = scene['objects'][0]
+            labels[i] = torch.tensor([names.index(obj[factor])
+                                      for factor, names in zip(cls.FACTOR_NAMES, cls.LABEL_NAMES)])
+            with Image.open(path) as image:
+                image = image.convert('RGB').resize((32, 32), Image.BILINEAR)
+                data[i] = torch.from_numpy(np.asarray(image, dtype=np.float32).transpose(2, 0, 1).copy()) / 255.0
+        return {'data': data, 'labels': labels, 'image_filenames': [p.name for p in paths]}
 
     def __len__(self):
         return len(self.data)

@@ -28,13 +28,13 @@ MODEL_PATHS=("$SEED0_PATH" "$SEED1_PATH" "$SEED2_PATH")
 SEED="${SLURM_ARRAY_TASK_ID}"
 MODEL_PATH="${MODEL_PATHS[$SEED]}"
 
+# 判断路径是否存在
 if [[ -z "$MODEL_PATH" || ! -f "$MODEL_PATH" ]]; then
     echo "Missing checkpoint for seed ${SEED}: edit SEED${SEED}_PATH in this script to point to an existing save_dict.pt" >&2
     exit 1
 fi
 
-# The evaluation script imports modules from both the repository root and
-# evaluation/, so both directories must be on Python's import path.
+# 评估脚本从仓库根目录和 # evaluation/ 导入模块，因此两个目录都必须在 Python 的导入路径中。
 export PYTHONPATH="$PWD:$PWD/evaluation${PYTHONPATH:+:$PYTHONPATH}"
 RESULTS_DIR="/nfs/data8/dong/mfcvae/results/ENRC"
 

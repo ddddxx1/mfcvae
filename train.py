@@ -37,7 +37,7 @@ def train():
 
     from utils import cluster_acc_and_conf_mat, cluster_acc_weighted, str2bool, load_args_from_yaml
     from datasets import Fast_MNIST, Fast_SVHN, Fast_3DShapes
-    from datasets_enrc import Fast_CMNIST, Fast_Stickfigures, Fast_GTSRB
+    from datasets_enrc import Fast_CMNIST, Fast_Stickfigures, Fast_GTSRB, Fast_NRObjects
 
     from plotting import plot_confusion_matrix, plot_n_inputs_per_cluster, plot_pi, plot_dict, \
         plot_cluster_examples_torch_grid, plot_inputs_and_recons_torch_grid, \
@@ -67,7 +67,7 @@ def train():
                         help="model type to use, EITHER 'fc_shared' (fully-connected, one shared encoder) OR 'fc_per_facet_enc_shared_dec' (fully-connected, J non-shared encoders, one per facet, shared decoder) \
                               OR 'fc_vlae' (fully-connected, VLAE type encoder) OR VLAE as in progressive training paper ('conv_vlae')")
     parser.add_argument('--dataset', type=str, default='fast_mnist', metavar='N',
-                        help="dataset used during training, including fast_gtsrb")
+                        help="dataset used during training, including fast_gtsrb and fast_nr_objects")
 
     # model
     parser.add_argument('--J_n_mixtures', type=int, default=2, metavar='N', help='J - number of clusterings/facets/mixtures')
@@ -414,6 +414,18 @@ def train():
                                                    shuffle=True, num_workers=0)
         test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.eval_batch_size,
                                                   shuffle=True, num_workers=0)
+    elif args.dataset == 'fast_nr_objects':
+        print('Initialize ENRC NRObjects dataset and data loaders...')
+        data_kwargs = dict(root=getattr(args, 'nr_objects_root', 'data/enrc_data/nr_objects'),
+                           train_frac=getattr(args, 'nr_objects_train_frac', 0.8),
+                           seed=args.seed, device=args.device,
+                           factors_label_list=args.factors_label_list)
+        train_data = Fast_NRObjects(train=True, **data_kwargs)  # **data_kwargs 把字典内容展开成函数参数，传入属性列表中的factors_label_list
+        test_data = Fast_NRObjects(train=False, **data_kwargs)
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size,
+                                                   shuffle=True, num_workers=0)
+        test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.eval_batch_size,
+                                                  shuffle=True, num_workers=0)
     elif args.dataset == 'fast_stickfigures':
         print("Initialize Dancing Stickfigures (ENRC) dataset and data loaders...")
         stickfigures_file = getattr(args, 'stickfigures_file', 'data/enrc_data/stickfigures/stickfigures_3sub.data')
@@ -479,6 +491,17 @@ def train():
         n_labels = 2
         chosen_attr_list = ['type', 'color']
         n_true_classes = [4, 2]
+        cmap = 'viridis'
+        in_channels = 3
+        in_dim = 32 * 32 * in_channels
+        likelihood_model = 'Gaussian'
+        activation_x_hat_z = 'sigmoid'
+    elif args.dataset == 'fast_nr_objects':
+        height, width = 32, 32
+        n_labels = len(args.factors_label_list)
+        chosen_attr_list = list(args.factors_label_list)
+        n_true_classes = [len(Fast_NRObjects.LABEL_NAMES[Fast_NRObjects.FACTOR_NAMES.index(name)])
+                          for name in chosen_attr_list]
         cmap = 'viridis'
         in_channels = 3
         in_dim = 32 * 32 * in_channels
@@ -750,7 +773,7 @@ def train():
             train_label_acc_mean = np.mean(train_acc_l_max_list).item()
 
             train_weighted_acc_j_max_list = []
-            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_stickfigures']:
+            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_nr_objects', 'fast_stickfigures']:
                 train_weighted_acc_j_l_list = [[] for j in range(mfcvae.J_n_mixtures)]
                 for j in range(mfcvae.J_n_mixtures):
                     for l in range(n_labels):
@@ -835,7 +858,7 @@ def train():
                 print_string += "Train Acc max facet %d: %.4f, " % (j, train_acc_j_max_list[j])
             for l in range(n_labels):
                 print_string += "Train Acc max label %d: %.4f, " % (l, train_acc_l_max_list[l])
-            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_stickfigures']:
+            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_nr_objects', 'fast_stickfigures']:
                 print_string += "|, "
                 for j in range(mfcvae.J_n_mixtures):
                     print_string += "Train Weighted Acc max facet %d: %.4f, " % (j, train_weighted_acc_j_max_list[j])
@@ -856,7 +879,7 @@ def train():
             log_dict['train_loss/kl_c'] = train_kl_c
             for j in range(mfcvae.J_n_mixtures):
                 log_dict['train_metric/facet_%d_acc_max' % j] = train_acc_j_max_list[j]
-                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_stickfigures']:
+                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_nr_objects', 'fast_stickfigures']:
                     log_dict['train_metric/facet_%d_weighted_acc_max' % j] = train_weighted_acc_j_max_list[j]
                 log_dict['train_metric/n_clusters_present_%d' % j] = len(y_pred_j_count_dict_list[j])
             log_dict['train_metric/facet_acc_max'] = train_facet_acc_max
@@ -868,7 +891,7 @@ def train():
                 log_dict['train_metric/label_acc_max'] = train_label_acc_max
                 log_dict['train_metric/label_acc_sum'] = train_label_acc_sum
                 log_dict['train_metric/label_acc_mean'] = train_label_acc_mean
-            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_stickfigures']:
+            if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_nr_objects', 'fast_stickfigures']:
                 log_dict['train_metric/facet_weighted_acc_max'] = train_weighted_acc_max
                 log_dict['train_metric/facet_weighted_acc_sum'] = train_weighted_acc_sum
                 log_dict['train_metric/facet_weighted_acc_mean'] = train_weighted_acc_mean
@@ -1014,7 +1037,7 @@ def train():
                 eval_label_acc_mean = np.mean(eval_acc_l_max_list).item()
 
                 eval_weighted_acc_j_max_list = []
-                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_stickfigures']:
+                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_nr_objects', 'fast_stickfigures']:
                     eval_weighted_acc_j_l_list = [[] for j in range(mfcvae.J_n_mixtures)]
                     for j in range(mfcvae.J_n_mixtures):
                         for l in range(n_labels):
@@ -1111,7 +1134,7 @@ def train():
                     print_string += "Eval Acc max facet %d: %.4f, " % (j, eval_acc_j_max_list[j])
                 for l in range(n_labels):
                     print_string += "Eval Acc max label %d: %.4f, " % (l, eval_acc_l_max_list[l])
-                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_stickfigures']:
+                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_nr_objects', 'fast_stickfigures']:
                     print_string += "|, "
                     for j in range(mfcvae.J_n_mixtures):
                         print_string += "Eval Weighted Acc max facet %d: %.4f, " % (j, eval_weighted_acc_j_max_list[j])
@@ -1120,7 +1143,7 @@ def train():
                 log_dict = {'test_metric/loss': eval_loss}
                 for j in range(mfcvae.J_n_mixtures):
                     log_dict['test_metric/facet_%d_acc_max' % j] = eval_acc_j_max_list[j]
-                    if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_stickfigures']:
+                    if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_nr_objects', 'fast_stickfigures']:
                         log_dict['test_metric/facet_%d_weighted_acc_max_' % j] = eval_weighted_acc_j_max_list[j]
                     log_dict['test_metric/clusters_present_%d' % j] = len(y_pred_j_count_dict_list[j])
                 log_dict['test_metric/facet_acc_max'] = eval_facet_acc_max
@@ -1132,7 +1155,7 @@ def train():
                     log_dict['test_metric/label_acc_max'] = eval_label_acc_max
                     log_dict['test_metric/label_acc_sum'] = eval_label_acc_sum
                     log_dict['test_metric/label_acc_mean'] = eval_label_acc_mean
-                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_stickfigures']:
+                if args.dataset in ['fast_svhn', 'fast_3dshapes', 'fast_cmnist', 'fast_gtsrb', 'fast_nr_objects', 'fast_stickfigures']:
                     log_dict['test_metric/facet_weighted_acc_max'] = eval_weighted_acc_max
                     log_dict['test_metric/facet_weighted_acc_sum'] = eval_weighted_acc_sum
                     log_dict['test_metric/facet_weighted_acc_mean'] = eval_weighted_acc_mean

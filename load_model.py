@@ -3,14 +3,17 @@ from mfcvae import MFCVAE
 import torch
 from torchvision.datasets import MNIST, SVHN
 from datasets import Fast_3DShapes
-from datasets_enrc import Fast_CMNIST, Fast_Stickfigures, Fast_GTSRB
+from datasets_enrc import Fast_CMNIST, Fast_Stickfigures, Fast_GTSRB, Fast_NRObjects
 import torchvision
 from torchvision import transforms
 
 
 def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
 
-    save_dict = torch.load(save_dict_path, map_location)
+    try:
+        save_dict = torch.load(save_dict_path, map_location=map_location, weights_only=False)
+    except TypeError:
+        save_dict = torch.load(save_dict_path, map_location=map_location)
     state_dict = save_dict['state_dict']
     args = save_dict['args']
     args.device = map_location
@@ -71,6 +74,17 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
         in_dim = 32 * 32 * in_channels
         likelihood_model = 'Gaussian'
         activation_x_hat_z = 'sigmoid'
+    elif args.dataset == 'fast_nr_objects':
+        height, width = 32, 32
+        n_labels = len(args.factors_label_list)
+        chosen_attr_list = list(args.factors_label_list)
+        n_true_classes = [len(Fast_NRObjects.LABEL_NAMES[Fast_NRObjects.FACTOR_NAMES.index(name)])
+                          for name in chosen_attr_list]
+        cmap = 'viridis'
+        in_channels = 3
+        in_dim = 32 * 32 * in_channels
+        likelihood_model = 'Gaussian'
+        activation_x_hat_z = 'sigmoid'
     elif args.dataset == 'fast_stickfigures':
         height, width = 20, 20
         n_labels = 3
@@ -105,6 +119,11 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
                                 train=True, train_frac=getattr(args, 'gtsrb_train_frac', 0.8),
                                 seed=getattr(args, 'seed', 42), device='cpu')
         n_train_batches_per_epoch = int(len(train_data) / args.batch_size)
+    elif args.dataset == 'fast_nr_objects':
+        train_data = Fast_NRObjects(root=getattr(args, 'nr_objects_root', 'data/enrc_data/nr_objects'),
+                                train=True, train_frac=getattr(args, 'nr_objects_train_frac', 0.8),
+                                seed=getattr(args, 'seed', 42), device='cpu')
+        n_train_batches_per_epoch = (len(train_data) + args.batch_size - 1) // args.batch_size
     elif args.dataset == 'fast_stickfigures':
         train_data = Fast_Stickfigures(train=True, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
                                        seed=getattr(args, 'seed', 42), device='cpu')
