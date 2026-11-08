@@ -3,7 +3,7 @@ device: cuda:0
 temp_sample_generation: 0.5
 do_fc_batch_norm: false
 seed: 0
-J_n_mixtures: 3 # 3 sub-clusters/facets in Dancing Stickfigures
+J_n_mixtures: 2 # upper-body and lower-body posture
 activation: relu
 batch_size: 150
 config_args_path: ''
@@ -11,25 +11,26 @@ cov_type_p_z_c: diag
 data_init: false
 dataset: fast_stickfigures
 dataset_on_gpu: true
+stickfigures_file: data/enrc_data/stickfigures/stickfigures_3sub.data
+stickfigures_train_frac: 0.8
+factors_label_list: [upper_body, lower_body]
+factors_variation_dict:
+  upper_body: [0, 1, 2]
+  lower_body: [0, 1, 2]
 dec_backbone_dims:
-- 256
 - 256
 - 256
 dec_backbone_n_hidden:
 - 1
 - 1
-- 1
 dec_rung_dims:
 - 256
-- 512
 - 512
 dec_rung_n_hidden:
 - 1
 - 1
-- 1
 decode_layer_dims:
 - 512
-- 256
 - 256
 do_progressive_training: false
 do_test_during_training: true
@@ -46,22 +47,16 @@ do_vis_train: true
 enc_backbone_dims:
 - 256
 - 512
-- 512
 enc_backbone_n_hidden:
-- 1
 - 1
 - 1
 enc_rung_dims:
 - -1
 - -1
-- -1
 enc_rung_n_hidden:
 - -1
 - -1
-- -1
 encode_layer_dims:
-- - 256
-  - 256
 - - 256
   - 256
 - - 256
@@ -82,12 +77,10 @@ n_batches_fade_in: 5000
 n_clusters_j_list:
 - 3
 - 3
-- 3
 n_epochs: 151
-n_epochs_per_progressive_step:
-- 50
-- 50
-- 51
+n_epochs_per_progressive_step:  # 渐进训练的每个阶段持续多少个 epoch
+- 101
+- 101
 n_examples_per_cluster: 6
 n_recons_per_cluster: 3
 n_sample_generations_per_cluster: 6
@@ -96,8 +89,7 @@ save_model: true
 sigma_multiplier_p_x_z: 0.35
 user: user1
 vis_every_n_epochs: 25
-wandb_mode: disabled
+wandb_mode: online
 z_j_dim_list:
-- 5
-- 5
-- 5
+- 16
+- 16

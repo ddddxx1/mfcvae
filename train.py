@@ -428,14 +428,12 @@ def train():
                                                   shuffle=True, num_workers=0)
     elif args.dataset == 'fast_stickfigures':
         print("Initialize Dancing Stickfigures (ENRC) dataset and data loaders...")
-        stickfigures_file = getattr(args, 'stickfigures_file', 'data/enrc_data/stickfigures/stickfigures_3sub.data')
-        stickfigures_train_frac = getattr(args, 'stickfigures_train_frac', 0.8)
-        train_data = Fast_Stickfigures(data_file=stickfigures_file,
-                                       train=True, train_frac=stickfigures_train_frac,
-                                       seed=args.seed, device=args.device)
-        test_data = Fast_Stickfigures(data_file=stickfigures_file,
-                                      train=False, train_frac=stickfigures_train_frac,
-                                      seed=args.seed, device=args.device)
+        data_kwargs = dict(
+            data_file=getattr(args, 'stickfigures_file', 'data/enrc_data/stickfigures/stickfigures_3sub.data'),
+            train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
+            seed=args.seed, device=args.device)
+        train_data = Fast_Stickfigures(train=True, **data_kwargs)
+        test_data = Fast_Stickfigures(train=False, **data_kwargs)
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
                                                    num_workers=0)
         test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.eval_batch_size, shuffle=True,
@@ -507,11 +505,11 @@ def train():
         in_dim = 32 * 32 * in_channels
         likelihood_model = 'Gaussian'
         activation_x_hat_z = 'sigmoid'
-    elif args.dataset == 'fast_stickfigures':
+    elif args.dataset == 'fast_stickfigures':   # 20*20 灰度
         height, width = 20, 20
-        n_labels = 3
-        chosen_attr_list = ['posture_0', 'posture_1', 'posture_2']
-        n_true_classes = [3, 3, 3]
+        n_labels = 2
+        chosen_attr_list = list(Fast_Stickfigures.FACTOR_NAMES)
+        n_true_classes = list(Fast_Stickfigures.N_CLASSES)
         cmap = 'grey'
         in_channels = 1
         in_dim = height * width * in_channels

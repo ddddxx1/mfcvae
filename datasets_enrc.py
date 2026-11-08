@@ -3,7 +3,7 @@ ENRC Benchmark Datasets for MFCVAE
 Datasets from 'Deep Embedded Non-Redundant Clustering' (Miklautz et al., AAAI 2020)
 Currently supporting:
 1. Fast_CMNIST: paired-digit MNIST (60,000 grayscale 56x56 images, 10 left digits x 10 right digits = 100 classes, 2 facets)
-2. Fast_Stickfigures: Dancing Stickfigures (900 grayscale images 20x20, 3 facets x 3 classes)
+2. Fast_Stickfigures: Dancing Stickfigures (900 grayscale images 20x20, 2 posture facets x 3 classes)
 3. Fast_GTSRB: four traffic sign types and two colors (6,720 RGB images 32x32)
 4. Fast_NRObjects: single objects with color/material/shape labels (10,000 RGB images resized to 32x32)
 
@@ -11,11 +11,12 @@ Currently supporting:
 用于 MFCVAE 的 ENRC 基准数据集，来自《Deep Embedded Non-Redundant Clustering》（Miklautz 等，AAAI 2020）
 当前支持：
 1. Fast_CMNIST：双数字 MNIST（60,000 张 56x56 灰度图片，10 个左侧数字 × 10 个右侧数字 = 100 类，2 个方面）
-2. Fast_Stickfigures：跳舞火柴人（900 张灰度图 20x20，3 个方面 × 3 类）
+2. Fast_Stickfigures：跳舞火柴人（900 张灰度图 20x20，2 个姿态方面 × 3 类）
 """
 
 import os
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import torch
@@ -240,71 +241,81 @@ class Fast_CMNIST(Dataset):
 
 
 class Fast_Stickfigures(Dataset):
-    """
-    Dancing Stickfigures dataset from ENRC benchmark.
-    Contains 900 synthetic grayscale images (20x20) in stickfigures_3sub.data.
-    Each sample has:
-      - 3 ground-truth labels (posture attributes), each in [0, 1, 2]
-      - 400 grayscale pixels (values 0..255)
-    """
-    def __init__(self,
-                 data_file: str = 'data/enrc_data/stickfigures/stickfigures_3sub.data',
-                 train: bool = True,
-                 train_frac: float = 0.8,
-                 seed: int = 42,
-                 device: str = 'cpu'):
-        super().__init__()
-        self.device = torch.device(device)
+    """900 grayscale 20x20 images with labels [upper_body, lower_body].
 
-        cache_path = os.path.join(os.path.dirname(data_file), "stickfigures_cache.pt")
-        if os.path.exists(cache_path):
-            print(f"[Fast_Stickfigures] Loading preprocessed data from cache: {cache_path}")
+    Read columns 0 and 1 of the semicolon-delimited source as posture labels.
+    Column 2 has unknown semantics and is ignored; pixels still start at 3.
+    Split within each of the nine posture combinations using a local RNG.
+    """
+
+    FACTOR_NAMES = ('upper_body', 'lower_body')
+    N_CLASSES = (3, 3)
+
+    def __init__(self,
+                 data_file='data/enrc_data/stickfigures/stickfigures_3sub.data',
+                 train=True, train_frac=0.8, seed=42, device='cpu',
+                 force_reprocess=False):
+        super().__init__()
+        if not 0 < train_frac < 1:
+            raise ValueError('train_frac must be between zero and one')
+        self.device = torch.device(device)
+        data_file = Path(data_file)
+        # Versioned, source-specific cache: never reuse the old three-label cache.
+        source_digest = hashlib.sha256(data_file.read_bytes()).hexdigest()
+        cache_path = data_file.with_name(data_file.name + '.upper_lower_v1.pt')
+        saved = None
+        if cache_path.is_file() and not force_reprocess:
             try:
                 saved = torch.load(cache_path, map_location='cpu', weights_only=False)
             except TypeError:
                 saved = torch.load(cache_path, map_location='cpu')
-            all_data = saved['data']
-            all_labels = saved['labels']
-        else:
-            print(f"[Fast_Stickfigures] Parsing {data_file}...")
-            if not os.path.exists(data_file):
-                raise FileNotFoundError(f"Stickfigures data file not found at {data_file}!")
+        if saved is None or saved.get('source_digest') != source_digest:
+            saved = self._preprocess(data_file)
+            saved['source_digest'] = source_digest
+            # Concurrent training jobs must only see complete caches.
+            with tempfile.NamedTemporaryFile(dir=data_file.parent, suffix='.pt', delete=False) as f:
+                temporary = f.name
+            try:
+                torch.save(saved, temporary)
+                os.replace(temporary, cache_path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        labels = saved['labels'].numpy()
+        rng = np.random.default_rng(seed)
+        selected = []
+        for combination in np.unique(labels, axis=0):
+            indices = rng.permutation(np.flatnonzero((labels == combination).all(axis=1)))
+            if len(indices) < 2:
+                raise ValueError(f'Need at least two samples for posture combination {combination}')
+            n_train = max(1, min(len(indices) - 1, int(len(indices) * train_frac)))
+            selected.extend(indices[:n_train] if train else indices[n_train:])
+        self.indices = np.sort(selected)
+        self.data = saved['data'][self.indices].to(self.device)
+        self.labels = saved['labels'][self.indices].to(self.device)
+        print(f'[Fast_Stickfigures] {"Train" if train else "Test"}: {len(self.data)} images on {self.device}')
 
-            labels_list = []
-            pixels_list = []
-            with open(data_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    parts = line.split(';')
-                    # first 3 values are labels
-                    lbls = [int(parts[0]), int(parts[1]), int(parts[2])]
-                    pxls = [float(p) for p in parts[3:403]]
-                    labels_list.append(lbls)
-                    pixels_list.append(pxls)
-
-            all_labels = torch.tensor(labels_list, dtype=torch.long)
-            all_data = torch.tensor(pixels_list, dtype=torch.float32).view(-1, 1, 20, 20) / 255.0
-            torch.save({'data': all_data, 'labels': all_labels}, cache_path)
-            print(f"[Fast_Stickfigures] Cached {len(all_data)} samples to {cache_path}.")
-
-        # Train / Test split
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        n_total = len(all_data)
-        perm = np.random.permutation(n_total)
-        n_train = int(n_total * train_frac)
-
-        if train:
-            indices = perm[:n_train]
-        else:
-            indices = perm[n_train:]
-
-        self.data = all_data[indices].to(self.device)
-        self.labels = all_labels[indices].to(self.device)
-        split_name = "Train" if train else "Test"
-        print(f"[Fast_Stickfigures] {split_name} set initialized: {len(self.data)} samples on device {self.device}")
+    @classmethod
+    def _preprocess(cls, data_file):
+        labels, pixels = [], []
+        with data_file.open() as f:
+            for line_number, line in enumerate(f, 1):
+                if not line.strip():
+                    continue
+                parts = line.strip().split(';')
+                if len(parts) != 403:
+                    raise ValueError(f'{data_file}:{line_number}: expected 3 metadata columns and 400 pixels')
+                label = [int(parts[0]), int(parts[1])]
+                if any(value not in range(3) for value in label):
+                    raise ValueError(f'{data_file}:{line_number}: posture labels must be 0, 1 or 2')
+                labels.append(label)
+                pixels.append([float(value) for value in parts[3:]])
+        if not pixels:
+            raise ValueError(f'No Stickfigures samples in {data_file}')
+        data = torch.tensor(pixels, dtype=torch.float32).reshape(-1, 1, 20, 20)
+        if not torch.isfinite(data).all() or (data < 0).any() or (data > 255).any():
+            raise ValueError(f'{data_file}: pixels must be finite values in [0, 255]')
+        return {'data': data / 255.0, 'labels': torch.tensor(labels, dtype=torch.long)}
 
     def __len__(self):
         return len(self.data)

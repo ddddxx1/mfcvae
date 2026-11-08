@@ -80,8 +80,10 @@ def eval_sample_generation():
             seed=args.seed, device='cpu', factors_label_list=args.factors_label_list)
     elif args.dataset == 'fast_stickfigures':
         print("Initialize Dancing Stickfigures (ENRC) data and data loaders...")
-        test_data = Fast_Stickfigures(train=False, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
-                                      seed=args.seed, device=args.device)
+        test_data = Fast_Stickfigures(
+            data_file=getattr(args, 'stickfigures_file', 'data/enrc_data/stickfigures/stickfigures_3sub.data'),
+            train=False, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
+            seed=args.seed, device=args.device)
 
     # initialize data loaders
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.eval_batch_size, shuffle=False,

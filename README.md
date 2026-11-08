@@ -244,6 +244,38 @@ Evaluation writes Hungarian-matched type/color accuracy, contingency tables,
 latent centers, and a decoded RGB atlas. For input/reconstruction pairs, run
 `PYTHONPATH=$PWD:$PWD/evaluation python evaluation/visualize_gtsrb_reconstructions.py --model_path PATH`.
 
+### ENRC Stickfigures: two posture labels
+
+`configs/enrc_stickfigures.yml` trains two facets (3 clusters each) for
+`upper_body` and `lower_body`. `Fast_Stickfigures` reads columns 0 and 1 of
+`stickfigures_3sub.data` as labels, ignores the unknown third metadata column,
+and reshapes columns 3–402 into 20×20 grayscale images scaled by 1/255.
+The existing `fc_vlae` architecture is used; `train/id_*.png` is not read.
+
+Like GTSRB, preprocessing is cached and splitting uses a local seeded RNG.
+Stickfigures has no track IDs: the split is stratified within each of the nine
+upper/lower posture combinations (80 train + 20 test per combination by default).
+The new source-specific cache ends in `.upper_lower_v1.pt`, checks the source
+content hash, and never reads the legacy three-label cache. Set
+`force_reprocess=True` on the dataset to rebuild it explicitly.
+Training, checkpoint loading and evaluation all honor `stickfigures_file` and
+`stickfigures_train_frac`. Run `python train.py --config_args_path configs/enrc_stickfigures.yml`.
+The split differs from earlier versions; retrain for comparable evaluation.
+Old three-facet checkpoints do not become two-facet models by changing this config.
+
+Evaluate with `evaluation/evaluate_stickfigures_cluster_accuracy.py` using
+`--model_path PATH --results_dir results/ENRC/stickfigures --output_prefix seed0`.
+Set `PYTHONPATH=$PWD:$PWD/evaluation` when running from the repository root.
+The optional `--data_file PATH` overrides the checkpoint's source file during
+both model loading and inference. The script reports Hungarian-matched posture
+accuracy, contingency tables, cluster sizes/purities, latent centers, and a 3×3
+decoded grayscale atlas. Because both facets have three clusters, it selects
+the one-to-one facet-to-posture assignment with maximum total accuracy.
+Both facet assignment and cluster-label matching use the evaluation split.
+For the three-seed Slurm array, export `SEED0_PATH`, `SEED1_PATH`, and
+`SEED2_PATH`, then submit
+`sbatch shell_scripts/evaluate_stickfigures_cluster_accuracy_3seed.sh`.
+
 ### Reproduce results by running a seed sweep 
 
 As we argue in the paper, stability is crucial in deep clustering, and one way to test it 

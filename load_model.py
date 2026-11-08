@@ -8,7 +8,7 @@ import torchvision
 from torchvision import transforms
 
 
-def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
+def load_model_from_save_dict(save_dict_path, map_location='cuda:0', stickfigures_file=None):
 
     try:
         save_dict = torch.load(save_dict_path, map_location=map_location, weights_only=False)
@@ -17,6 +17,8 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
     state_dict = save_dict['state_dict']
     args = save_dict['args']
     args.device = map_location
+    if stickfigures_file is not None and args.dataset == 'fast_stickfigures':
+        args.stickfigures_file = stickfigures_file
 
     device = torch.device(args.device)
 
@@ -87,9 +89,9 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
         activation_x_hat_z = 'sigmoid'
     elif args.dataset == 'fast_stickfigures':
         height, width = 20, 20
-        n_labels = 3
-        chosen_attr_list = ['posture_0', 'posture_1', 'posture_2']
-        n_true_classes = [3, 3, 3]
+        n_labels = 2
+        chosen_attr_list = list(Fast_Stickfigures.FACTOR_NAMES)
+        n_true_classes = list(Fast_Stickfigures.N_CLASSES)
         cmap = 'grey'
         in_channels = 1
         in_dim = 20 * 20 * in_channels
@@ -125,9 +127,11 @@ def load_model_from_save_dict(save_dict_path, map_location='cuda:0'):
                                 seed=getattr(args, 'seed', 42), device='cpu')
         n_train_batches_per_epoch = (len(train_data) + args.batch_size - 1) // args.batch_size
     elif args.dataset == 'fast_stickfigures':
-        train_data = Fast_Stickfigures(train=True, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
-                                       seed=getattr(args, 'seed', 42), device='cpu')
-        n_train_batches_per_epoch = int(len(train_data) / args.batch_size)
+        train_data = Fast_Stickfigures(
+            data_file=getattr(args, 'stickfigures_file', 'data/enrc_data/stickfigures/stickfigures_3sub.data'),
+            train=True, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
+            seed=getattr(args, 'seed', 42), device='cpu')
+        n_train_batches_per_epoch = (len(train_data) + args.batch_size - 1) // args.batch_size
     # print("n_train_batches_per_epoch: ", n_train_batches_per_epoch)
 
 

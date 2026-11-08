@@ -76,8 +76,10 @@ def eval_top10_cluster_examples():
             train=False, train_frac=getattr(args, 'nr_objects_train_frac', 0.8),
             seed=args.seed, device='cpu', factors_label_list=args.factors_label_list)
     elif args.dataset == 'fast_stickfigures':
-        test_data = Fast_Stickfigures(train=False, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
-                                      seed=args.seed, device=args.device)
+        test_data = Fast_Stickfigures(
+            data_file=getattr(args, 'stickfigures_file', 'data/enrc_data/stickfigures/stickfigures_3sub.data'),
+            train=False, train_frac=getattr(args, 'stickfigures_train_frac', 0.8),
+            seed=args.seed, device=args.device)
         test_data.data = test_data.data.to('cpu')
         test_data.labels = test_data.labels.to('cpu')
     else:
