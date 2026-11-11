@@ -9,7 +9,7 @@ from sklearn.neural_network import MLPClassifier
 from torchvision import transforms
 
 from datasets import Fast_3DShapes, Fast_MNIST, Fast_SVHN
-from datasets_enrc import Fast_CMNIST, Fast_GTSRB
+from datasets_enrc import Fast_CMNIST, Fast_GTSRB, Fast_NRObjects, Fast_Stickfigures
 from load_model import load_model_from_save_dict
 
 # 用 sklearn 的一层 MLP 分类器预测标签，最后报告 test accuracy
@@ -93,6 +93,25 @@ def make_loaders(args, device):
         )
         train_data = Fast_GTSRB(train=True, **data_kwargs)
         test_data = Fast_GTSRB(train=False, **data_kwargs)
+    elif args.dataset == "fast_nr_objects":
+        data_kwargs = dict(
+            root=getattr(args, "nr_objects_root", "data/enrc_data/nr_objects"),
+            train_frac=getattr(args, "nr_objects_train_frac", 0.8),
+            seed=getattr(args, "seed", 42),
+            device=device,
+            factors_label_list=args.factors_label_list,
+        )
+        train_data = Fast_NRObjects(train=True, **data_kwargs)
+        test_data = Fast_NRObjects(train=False, **data_kwargs)
+    elif args.dataset == "fast_stickfigures":
+        data_kwargs = dict(
+            data_file=getattr(args, "stickfigures_file", "data/enrc_data/stickfigures/stickfigures_3sub.data"),
+            train_frac=getattr(args, "stickfigures_train_frac", 0.8),
+            seed=getattr(args, "seed", 42),
+            device=device,
+        )
+        train_data = Fast_Stickfigures(train=True, **data_kwargs)
+        test_data = Fast_Stickfigures(train=False, **data_kwargs)
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
@@ -228,18 +247,21 @@ def main():
     for run_idx in range(cli_args.n_runs):
         model_path = cli_args.model_path[run_idx] if len(cli_args.model_path) > 1 else cli_args.model_path[0]
         model, run_args = load_model_from_save_dict(model_path, map_location=cli_args.device)
+        if run_args.dataset in ("fast_3dshapes", "fast_nr_objects"):
+            run_label_names = list(run_args.factors_label_list)
+        elif run_args.dataset == "fast_cmnist":
+            run_label_names = ["left digit", "right digit"]
+        elif run_args.dataset == "fast_gtsrb":
+            run_label_names = ["type", "color"]
+        elif run_args.dataset == "fast_stickfigures":
+            run_label_names = list(Fast_Stickfigures.FACTOR_NAMES)
+        else:
+            run_label_names = ["digit_class"]
         if reference_dataset is None:
             reference_dataset = run_args.dataset
-            if run_args.dataset == "fast_3dshapes":
-                label_names = run_args.factors_label_list
-            elif run_args.dataset == "fast_cmnist":
-                label_names = ["left digit", "right digit"]  # z1倾向学习左边 z2倾向学习右边
-            elif run_args.dataset == "fast_gtsrb":
-                label_names = ["type", "color"]
-            else:
-                label_names = ["digit_class"]
-        elif run_args.dataset != reference_dataset:
-            raise ValueError("All checkpoints must use the same dataset.")
+            label_names = run_label_names
+        elif run_args.dataset != reference_dataset or run_label_names != label_names:
+            raise ValueError("All checkpoints must use the same dataset and label order.")
 
         model = model.to(cli_args.device)
         model.eval()

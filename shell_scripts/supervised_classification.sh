@@ -5,8 +5,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=02:30:00
 #SBATCH --job-name=supervised_class
-#SBATCH --output=../logs/supervised_classification-ENRCgtsrb-%j.out
-#SBATCH --error=../logs/supervised_classification-ENRCgtsrb-%j.err
+#SBATCH --output=../logs/supervised_classification/supervised_classification-ENRCstickfigures-%j.out
+#SBATCH --error=../logs/supervised_classification/supervised_classification-ENRCstickfigures-%j.err
 
 set -euo pipefail
 
@@ -24,9 +24,9 @@ send_bark "集群任务开始" \
 
 "$PYTHON_BIN" -u evaluation/supervised_classification.py \
   --model_path \
-    wandb/run-ENRCgtsrb-main-v1/run-20261103_165056-die055e7/files/save_dict.pt \
-    wandb/run-ENRCgtsrb-main-v1/run-20261103_165058-ybzkk88o/files/save_dict.pt \
-    wandb/run-ENRCgtsrb-main-v1/run-20261103_165156-y73kd9sg/files/save_dict.pt \
+    wandb/run-ENRCstickfigures-main-v1/run-20261107_164418-36pvhgey/files/save_dict.pt \
+    wandb/run-ENRCstickfigures-main-v1/run-20261107_164432-ovzlubuh/files/save_dict.pt \
+    wandb/run-ENRCstickfigures-main-v1/run-20261107_164432-uex6dai8/files/save_dict.pt \
   --device cuda:0 \
   --embedding_mode sample \
   --n_runs 3 \
