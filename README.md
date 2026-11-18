@@ -237,9 +237,9 @@ level, so adjacent frames cannot appear in both splits. This is a new split
 within the supplied training subset; no separate official test files are used.
 
 Submit the three-seed training array with
-`sbatch shell_scripts/run_ENRCgtsrb_3seed.sh`. To evaluate checkpoints, set
+`sbatch run_ENRCgtsrb_3seed.sh`. To evaluate checkpoints, set
 `SEED0_PATH`, `SEED1_PATH`, and `SEED2_PATH` to their `save_dict.pt` files and
-submit `sbatch shell_scripts/evaluate_gtsrb_cluster_accuracy_3seed.sh`.
+submit `sbatch evaluate_gtsrb_cluster_accuracy_3seed.sh`.
 Evaluation writes Hungarian-matched type/color accuracy, contingency tables,
 latent centers, and a decoded RGB atlas. For input/reconstruction pairs, run
 `PYTHONPATH=$PWD:$PWD/evaluation python evaluation/visualize_gtsrb_reconstructions.py --model_path PATH`.
@@ -274,7 +274,7 @@ the one-to-one facet-to-posture assignment with maximum total accuracy.
 Both facet assignment and cluster-label matching use the evaluation split.
 For the three-seed Slurm array, export `SEED0_PATH`, `SEED1_PATH`, and
 `SEED2_PATH`, then submit
-`sbatch shell_scripts/evaluate_stickfigures_cluster_accuracy_3seed.sh`.
+`sbatch evaluate_stickfigures_cluster_accuracy_3seed.sh`.
 
 ### Reproduce results by running a seed sweep 
 
