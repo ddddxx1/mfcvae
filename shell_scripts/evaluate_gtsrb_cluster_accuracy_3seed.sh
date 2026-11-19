@@ -6,8 +6,8 @@
 #SBATCH --qos=minor_student_prio
 #SBATCH --gres=gpu:1
 #SBATCH --time=02:30:00
-#SBATCH --output=../logs/slurm-ENRCgtsrb-cluster-acc-%A_%a.out
-#SBATCH --error=../logs/slurm-ENRCgtsrb-cluster-acc-%A_%a.err
+#SBATCH --output=../logs/cluster_accuracy/gtsrb/slurm-ENRCgtsrb-cluster-acc-v2-%A_%a.out
+#SBATCH --error=../logs/cluster_accuracy/gtsrb/slurm-ENRCgtsrb-cluster-acc-v2-%A_%a.err
 
 set -euo pipefail
 
